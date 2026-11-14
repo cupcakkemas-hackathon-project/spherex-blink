@@ -85,6 +85,10 @@ On 2026-11-14, a live 3-arcmin WISE 0855 API request returned 8 chronological st
 
 The current Role A route still calls `to_png_b64` without `symmetric=True`. Ask Dhiya to pass `symmetric=(mode == "diff")` so the API actually displays both residual signs. In a real 3-arcmin WISE 0855 run, 59 frames across D1–D6 produced 59 chronological differences. The inspected frames still showed source residuals, and I could not confidently identify a moving object; therefore the visual acceptance check is not yet met.
 
+## B5: Wavelength normalization decision
+
+I did not add another normalization. The existing per-frame stretch already maps each frame's 5th–99.7th percentile range to the display range. Applying a positive linear rescale and offset before that stretch cancels out. I checked median/MAD normalization on 59 live WISE 0855 frames: it changed **0 of 241,664** rendered 8-bit pixels. The shared stretch comparison in B2 also changed contrast between frames. Keep the existing stretch; it is for visibility, not preserving photometric brightness across wavelengths.
+
 ## Sources
 
 - [IRSA tutorial: Introduction to SPHEREx Spectral Images](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro)
