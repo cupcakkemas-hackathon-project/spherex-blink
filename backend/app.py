@@ -86,7 +86,7 @@ def frames(ra: str, dec: str, fov: float = 2.0, mode: str = "single", source: st
         "ra": ra_d, "dec": dec_d, "fov_arcmin": fov, "mode": mode,
         "size_px": SIZE_PX, "pixel_scale_arcsec": pixel_scale_arcsec,
         "frames": [
-            {"png": to_png_b64(f["data"]), "mjd": f["mjd"],
+            {"png": to_png_b64(f["data"], symmetric=(mode == "diff")), "mjd": f["mjd"],
              "wavelength": json_wavelength(f.get("wavelength")),
              "detector": f["detector"], "flags": f["flags"]}
             for f in out
