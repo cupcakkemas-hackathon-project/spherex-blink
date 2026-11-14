@@ -21,17 +21,35 @@
   input { width:150px; } button { min-height:44px; cursor:pointer; } button:hover { border-color:var(--accent); }
   button:disabled { cursor:wait; opacity:.7; }
   button.primary { background:var(--accent); color:#1a1200; border-color:var(--accent); font-weight:600; }
-  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center; font-size:13px; color:var(--mute); }
-  .chips button { min-height:40px; padding:4px 10px; font-size:13px; }
-  .chips button[aria-pressed="true"] { background:var(--accent); color:#1a1200; border-color:var(--accent); font-weight:600; }
+  #copy_link { display:inline-flex; width:44px; align-items:center; justify-content:center; padding:8px; }
+  #copy_link svg { width:16px; height:16px; flex:none; }
+  .quick-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-top:10px; }
+  .quick-group { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:13px; color:var(--mute); }
+  #chips { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .quick-group button { min-height:40px; padding:4px 10px; font-size:13px; }
+  #chips button[aria-pressed="true"] { background:var(--accent); color:#1a1200; border-color:var(--accent); font-weight:600; }
+  .detector-filters { gap:4px; padding-left:12px; border-left:1px solid var(--line); }
+  .detector-filters button { min-width:38px; min-height:40px; padding:4px 8px; border-color:transparent; background:transparent; color:var(--mute); }
+  .detector-filters button[aria-pressed="true"] { background:rgba(255,179,71,.14); color:var(--accent); border-color:transparent; font-weight:600; }
+  .detector-filters button:hover { border-color:transparent; background:rgba(255,179,71,.22); }
+  .detector-filters button:disabled { cursor:not-allowed; }
   .banner { display:none; background:#3a1d1d; border:1px solid var(--warn); color:#ffd0d0; padding:8px 12px; border-radius:8px; font-size:13px; }
   .view { display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:14px; }
   @media (max-width:720px){ .view { grid-template-columns:1fr; } }
   canvas { width:100%; aspect-ratio:1; image-rendering:pixelated; background:#000; border-radius:8px; display:block; }
+  .image-wrap { position:relative; min-width:0; }
+  #cv { cursor:crosshair; }
+  #date-stamp { position:absolute; top:8px; left:8px; padding:2px 6px; border-radius:4px; background:rgba(0,0,0,.72); color:#fff; font-size:15pt; line-height:1.2; pointer-events:none; }
+  .spectrum-panel h2 { margin:0 0 4px; font-size:16px; }
+  #spectrum_status { color:var(--mute); font-size:13px; min-height:20px; }
+  #spectrum_status.err { color:var(--warn); }
+  #spectrum { width:100%; height:auto; aspect-ratio:auto; image-rendering:auto; background:#0e1424; }
   dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:6px 10px; font-size:13px; }
   dt { color:var(--mute); } dd { margin:0; word-break:break-word; }
   .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .controls input[type=range] { flex:1; min-width:140px; padding:0; width:auto; }
+  .timeline { flex:1; min-width:160px; }
+  .timeline input[type=range] { display:block; width:100%; min-width:0; padding:0; }
+  .timeline-ends { display:flex; justify-content:space-between; gap:8px; color:var(--mute); font-size:11px; }
   #status { color:var(--mute); font-size:13px; min-height:20px; }
   #status.loading::before { content:""; display:inline-block; width:12px; height:12px; margin-right:8px; vertical-align:-2px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
   #status.err { color:var(--warn); }
@@ -45,7 +63,9 @@
     .view { min-width:0; }
     .view dl { grid-template-columns:auto minmax(0,1fr); }
     .controls { gap:8px; }
-    .controls input[type=range] { min-width:100px; }
+    .timeline { flex-basis:100%; order:1; }
+    .timeline-ends { font-size:10px; }
+    .detector-filters { padding-left:0; border-left:0; }
   }
 </style>
 </head>
@@ -64,7 +84,7 @@
       <label>RA (deg or 08h55m10.8s)<input id="ra" value="133.7951"></label>
       <label>Dec (deg or -7d14m42.5s)<input id="dec" value="-7.2452"></label>
       <label>Field of view
-        <select id="fov"><option value="1">1 arcmin</option><option value="2" selected>2 arcmin</option><option value="5">5 arcmin</option><option value="10">10 arcmin</option></select>
+        <select id="fov"><option value="1">1 arcmin</option><option value="2" selected>2 arcmin</option><option value="3">3 arcmin</option><option value="5">5 arcmin</option><option value="10">10 arcmin</option></select>
       </label>
       <label>View
         <select id="mode"><option value="single">All frames in time order</option><option value="stack">Stack by detector</option><option value="diff">Difference (highlight movers)</option></select>
@@ -73,18 +93,39 @@
         <select id="source"><option value="live">Live SPHEREx (IRSA)</option><option value="synthetic">Synthetic demo (fake)</option></select>
       </label>
       <button class="primary" id="go">Search</button>
+      <button type="button" id="copy_link" title="Copy a shareable link to these search settings" aria-label="Copy link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 13a5 5 0 0 0 7.07 0l3-3A5 5 0 0 0 13 2.93l-1.72 1.71"></path>
+          <path d="M14 11a5 5 0 0 0-7.07 0l-3 3A5 5 0 0 0 11 21.07l1.71-1.71"></path>
+        </svg>
+      </button>
     </div>
-    <div class="chips">Try: <span id="chips"></span></div>
+    <div class="quick-controls">
+      <div class="quick-group"><span>Try:</span><span id="chips"></span></div>
+      <div class="quick-group detector-filters" role="group" aria-label="Filter frames by detector">
+        <span>Detectors:</span>
+        <button type="button" class="detector-filter" data-detector="1" aria-pressed="true">D1</button>
+        <button type="button" class="detector-filter" data-detector="2" aria-pressed="true">D2</button>
+        <button type="button" class="detector-filter" data-detector="3" aria-pressed="true">D3</button>
+        <button type="button" class="detector-filter" data-detector="4" aria-pressed="true">D4</button>
+        <button type="button" class="detector-filter" data-detector="5" aria-pressed="true">D5</button>
+        <button type="button" class="detector-filter" data-detector="6" aria-pressed="true">D6</button>
+        <button type="button" id="detectors_all">All</button>
+      </div>
+    </div>
   </div>
 
   <div class="banner" id="banner"><b>SYNTHETIC DEMO.</b> These images are generated, not real SPHEREx data. They only show how the viewer works.</div>
   <div id="status" role="status" aria-live="polite">Pick a target or enter coordinates, then press Search.</div>
 
   <div class="view panel">
-    <canvas id="cv" width="64" height="64"></canvas>
+    <div class="image-wrap">
+      <canvas id="cv" width="64" height="64" role="img" aria-label="SPHEREx image. Click to inspect a point." tabindex="0"></canvas>
+      <div id="date-stamp" aria-hidden="true"></div>
+    </div>
     <dl>
       <dt>Frame</dt><dd id="f_n">–</dd>
-      <dt>Date (MJD)</dt><dd id="f_t">–</dd>
+      <dt>Date</dt><dd id="f_t">–</dd>
       <dt>Detector</dt><dd id="f_d">–</dd>
       <dt>Wavelength</dt><dd id="f_w">–</dd>
       <dt>Flags</dt><dd id="f_f">–</dd>
@@ -92,9 +133,18 @@
     </dl>
   </div>
 
+  <div class="panel spectrum-panel">
+    <h2>Point spectrum</h2>
+    <div id="spectrum_status" role="status" aria-live="polite">Click the image to measure the spectrum at a position.</div>
+    <canvas id="spectrum" width="640" height="300" role="img" aria-label="Spectrum plot"></canvas>
+  </div>
+
   <div class="panel controls">
     <button id="play">Pause</button>
-    <input type="range" id="scrub" min="0" max="0" value="0">
+    <div class="timeline">
+      <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Frame timeline">
+      <div class="timeline-ends"><span id="scrub_first">First: –</span><span id="scrub_last">Last: –</span></div>
+    </div>
     <label style="display:flex;align-items:center;gap:6px;flex-direction:row">Speed
       <select id="speed"><option value="400">Slow</option><option value="200" selected>Normal</option><option value="80">Fast</option></select>
     </label>
@@ -104,8 +154,14 @@
 <script>
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
-let frames = [], imgs = [], idx = 0, playing = true, timer = null, meta = {};
+const spectrumCanvas = $('spectrum'), spectrumCtx = spectrumCanvas.getContext('2d');
+let frames = [], imgs = [], idx = 0, playing = true, timer = null, meta = {}, marker = null;
+let allFrames = [], allImgs = [], spectrumPoints = null;
+let spectrumRequest = 0;
 let targets = {}, targetButtons = new Map();
+const activeDetectors = new Set([1, 2, 3, 4, 5, 6]);
+const detectorColors = ['#56b4e9','#e69f00','#009e73','#f0e442','#cc79a7','#d55e00'];
+const FRAME_REQUEST_TIMEOUT_MS = 4 * 60 * 1000;
 
 // Example targets come from the backend so there is one source of truth.
 fetch('/api/targets').then(r => r.json()).then(t => {
@@ -131,6 +187,138 @@ function updateTargetSelection() {
 }
 
 function setStatus(msg, err=false){ $('status').textContent = msg; $('status').className = err ? 'err' : ''; }
+function setSpectrumStatus(msg, err=false){ $('spectrum_status').textContent = msg; $('spectrum_status').className = err ? 'err' : ''; }
+
+async function copyCurrentLink() {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(location.href);
+    } else {
+      const input = document.createElement('textarea');
+      input.value = location.href;
+      input.setAttribute('readonly', '');
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      const copied = document.execCommand('copy');
+      input.remove();
+      if (!copied) throw new Error('Clipboard access is unavailable.');
+    }
+    setStatus('Link copied to clipboard.');
+  } catch (error) {
+    setStatus(`Could not copy the link. Copy it from the address bar. ${error.message}`, true);
+  }
+}
+
+function clearSpectrum(message) {
+  spectrumCtx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+  setSpectrumStatus(message);
+}
+
+function updateDetectorButtons() {
+  for (const button of document.querySelectorAll('.detector-filter')) {
+    button.setAttribute('aria-pressed', String(activeDetectors.has(Number(button.dataset.detector))));
+  }
+}
+
+function updateSpectrumForDetectors() {
+  if (!spectrumPoints) return;
+  const points = spectrumPoints.filter(point => activeDetectors.has(Number(point.detector)));
+  if (points.length === 0) {
+    clearSpectrum('No spectrum points for the selected detectors.');
+    return;
+  }
+  plotSpectrum(points);
+  setSpectrumStatus(`${points.length} spectrum point(s) for the selected detectors.`);
+}
+
+function setDetectorFiltersDisabled(disabled) {
+  for (const button of document.querySelectorAll('.detector-filter, #detectors_all')) {
+    button.disabled = disabled;
+  }
+}
+
+function applyDetectorFilters() {
+  const resumePlaying = playing;
+  clearInterval(timer);
+  frames = allFrames.filter(frame => activeDetectors.has(Number(frame.detector)));
+  imgs = allImgs.filter((image, index) => activeDetectors.has(Number(allFrames[index].detector)));
+  idx = 0;
+  $('scrub').max = Math.max(0, frames.length - 1);
+  $('scrub').value = 0;
+  $('scrub_first').textContent = `First: ${dateFromMjd(frames[0]?.mjd) || 'unavailable'}`;
+  $('scrub_last').textContent = `Last: ${dateFromMjd(frames[frames.length - 1]?.mjd) || 'unavailable'}`;
+  updateDetectorButtons();
+
+  if (frames.length === 0) {
+    playing = false;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    $('play').textContent = 'Play';
+    $('f_n').textContent = '–';
+    $('f_t').textContent = '–';
+    $('f_d').textContent = '–';
+    $('f_w').textContent = '–';
+    $('f_f').textContent = '–';
+    $('f_p').textContent = '–';
+    $('date-stamp').textContent = '';
+    setStatus('No frames match the selected detectors.', true);
+    updateSpectrumForDetectors();
+    return;
+  }
+
+  playing = resumePlaying;
+  setStatus(`Showing ${frames.length} of ${allFrames.length} frame(s).`);
+  draw();
+  if (playing) {
+    $('play').textContent = 'Pause';
+    start();
+  } else {
+    $('play').textContent = 'Play';
+  }
+  updateSpectrumForDetectors();
+}
+
+function dateFromMjd(mjd) {
+  if (mjd === null || mjd === undefined || mjd === '') return null;
+  const value = Number(mjd);
+  if (!Number.isFinite(value)) return null;
+  const date = new Date(Date.UTC(1858, 10, 17) + value * 86400000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+function frameDateLabel(frame) {
+  const date = dateFromMjd(frame.mjd);
+  if (!date) return 'Date unavailable';
+  return meta.mode === 'stack' ? `Approx. ${date} (middle date)` : date;
+}
+
+function clearFrameDisplay() {
+  clearInterval(timer);
+  frames = [];
+  imgs = [];
+  allFrames = [];
+  allImgs = [];
+  spectrumPoints = null;
+  idx = 0;
+  playing = false;
+  meta = {};
+  marker = null;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  $('f_n').textContent = '–';
+  $('f_t').textContent = '–';
+  $('f_d').textContent = '–';
+  $('f_w').textContent = '–';
+  $('f_f').textContent = '–';
+  $('f_p').textContent = '–';
+  $('scrub').max = 0;
+  $('scrub').value = 0;
+  $('scrub_first').textContent = 'First: –';
+  $('scrub_last').textContent = 'Last: –';
+  $('play').textContent = 'Play';
+  spectrumRequest++;
+  clearSpectrum('Click the image to measure the spectrum at a position.');
+}
 
 async function search(pushUrl = true) {
   const searchButton = $('go');
@@ -138,47 +326,208 @@ async function search(pushUrl = true) {
   const p = new URLSearchParams({ ra:$('ra').value, dec:$('dec').value, fov:$('fov').value, mode:$('mode').value, source:$('source').value });
   if (pushUrl) history.replaceState(null, '', '?' + p.toString());
   $('banner').style.display = $('source').value === 'synthetic' ? 'block' : 'none';
+  clearFrameDisplay();
+  setDetectorFiltersDisabled(true);
   searchButton.disabled = true;
   setStatus($('source').value === 'live'
-    ? 'Searching live SPHEREx data… this can take 10–60 seconds.'
+    ? 'Searching live SPHEREx data… this can take up to 4 minutes.'
     : 'Loading synthetic demo images…');
   $('status').classList.add('loading');
-  clearInterval(timer);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FRAME_REQUEST_TIMEOUT_MS);
+  let responseStatus = null;
   try {
-    const r = await fetch('/api/frames?' + p);
+    const r = await fetch('/api/frames?' + p, {signal:controller.signal});
+    responseStatus = r.status;
     const j = await r.json();
     if (!r.ok) {
       const detail = j.detail;
       if (r.status === 400) throw new Error(detail ? `Please check the coordinates and settings. ${detail}` : 'Please check the coordinates and settings.');
       if (r.status === 404) throw new Error('No SPHEREx images cover this position yet.');
-      if (r.status === 502) throw new Error(detail ? `IRSA is having a problem right now. ${detail}` : 'IRSA is having a problem right now. Please try again later.');
+      if (r.status === 502) throw new Error('IRSA is busy, try again.');
       throw new Error(detail || `The request failed (${r.status}). Please try again.`);
     }
-    meta = j; frames = j.frames;
-    imgs = await Promise.all(frames.map(f => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = 'data:image/png;base64,' + f.png; })));
-    $('scrub').max = frames.length - 1; idx = 0; playing = true; $('play').textContent = 'Pause';
+    meta = j; allFrames = j.frames;
+    allImgs = await Promise.all(allFrames.map(f => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = 'data:image/png;base64,' + f.png; })));
+    frames = allFrames; imgs = allImgs; idx = 0; playing = true; $('play').textContent = 'Pause';
+    $('scrub_first').textContent = `First: ${dateFromMjd(frames[0]?.mjd) || 'unavailable'}`;
+    $('scrub_last').textContent = `Last: ${dateFromMjd(frames[frames.length - 1]?.mjd) || 'unavailable'}`;
+    marker = null;
+    clearSpectrum('Click the image to measure the spectrum at a position.');
     updateTargetSelection();
-    setStatus(`${frames.length} frame(s) loaded.`);
-    draw(); start();
-  } catch (e) { setStatus('Unable to load frames. ' + e.message, true); }
-  finally { searchButton.disabled = false; }
+    applyDetectorFilters();
+  } catch (e) {
+    const message = controller.signal.aborted
+      ? 'This search took too long. Please try again.'
+      : responseStatus === 502
+        ? 'IRSA is busy, try again.'
+      : 'Unable to load frames. ' + e.message;
+    setStatus(message, true);
+  } finally {
+    clearTimeout(timeout);
+    setDetectorFiltersDisabled(false);
+    searchButton.disabled = false;
+  }
 }
 
 function draw() {
   if (!imgs.length) return;
   const i = imgs[idx]; cv.width = i.width; cv.height = i.height; ctx.drawImage(i, 0, 0);
-  const f = frames[idx];
+  const frame = frames[idx];
+  const dateLabel = frameDateLabel(frame);
+  const stamp = meta.mode === 'stack' && dateFromMjd(frame.mjd)
+    ? `Approx. ${dateFromMjd(frame.mjd)}`
+    : dateFromMjd(frame.mjd) || 'Date unavailable';
+  $('date-stamp').textContent = stamp;
+  if (marker) {
+    ctx.save();
+    ctx.strokeStyle = '#ffb347';
+    ctx.lineWidth = Math.max(1, cv.width / 64);
+    ctx.beginPath();
+    ctx.arc(marker.x, marker.y, Math.max(3, cv.width / 18), 0, Math.PI * 2);
+    ctx.moveTo(marker.x - 6, marker.y); ctx.lineTo(marker.x + 6, marker.y);
+    ctx.moveTo(marker.x, marker.y - 6); ctx.lineTo(marker.x, marker.y + 6);
+    ctx.stroke();
+    ctx.restore();
+  }
+  const f = frame;
   $('f_n').textContent = `${idx + 1} / ${frames.length}`;
-  $('f_t').textContent = f.mjd.toFixed(2);
+  $('f_t').textContent = `${dateLabel} · +${Math.max(0, Math.round(f.mjd - frames[0].mjd))} days since first frame`;
   $('f_d').textContent = f.detector || '–';
   $('f_w').textContent = f.wavelength !== null && typeof f.wavelength === 'number' && Number.isFinite(f.wavelength) ? f.wavelength.toFixed(2) + ' µm' : 'not available';
   $('f_f').textContent = f.flags;
-  $('f_p').textContent = `RA ${meta.ra.toFixed(4)}°, Dec ${meta.dec.toFixed(4)}°, ${meta.fov_arcmin}′ wide`;
+  $('f_p').textContent = marker
+    ? `RA ${marker.ra.toFixed(5)}°, Dec ${marker.dec.toFixed(5)}° (selected); search center RA ${meta.ra.toFixed(4)}°, Dec ${meta.dec.toFixed(4)}°`
+    : `RA ${meta.ra.toFixed(4)}°, Dec ${meta.dec.toFixed(4)}°, ${meta.fov_arcmin}′ wide`;
   $('scrub').value = idx;
 }
+
+function plotSpectrum(points) {
+  const width = spectrumCanvas.width, height = spectrumCanvas.height;
+  const margin = {left:68, right:20, top:18, bottom:48};
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const wavelengths = points.map(point => point.wavelength);
+  const fluxBounds = points.flatMap(point => {
+    const flux = Number(point.flux), error = Number(point.err);
+    return Number.isFinite(error) ? [flux - error, flux + error] : [flux];
+  });
+  let minX = Math.min(...wavelengths), maxX = Math.max(...wavelengths);
+  let minY = Math.min(...fluxBounds), maxY = Math.max(...fluxBounds);
+  if (minX === maxX) { minX -= 0.1; maxX += 0.1; }
+  if (minY === maxY) { minY -= 0.1; maxY += 0.1; }
+  const yPadding = (maxY - minY) * 0.08;
+  minY -= yPadding; maxY += yPadding;
+  const x = value => margin.left + (value - minX) / (maxX - minX) * plotWidth;
+  const y = value => margin.top + (maxY - value) / (maxY - minY) * plotHeight;
+
+  spectrumCtx.clearRect(0, 0, width, height);
+  spectrumCtx.font = '12px system-ui, sans-serif';
+  spectrumCtx.textAlign = 'right';
+  spectrumCtx.textBaseline = 'middle';
+  spectrumCtx.strokeStyle = '#26304a';
+  spectrumCtx.fillStyle = '#8b96b3';
+  for (let tick = 0; tick <= 4; tick++) {
+    const value = minY + (maxY - minY) * tick / 4;
+    const py = y(value);
+    spectrumCtx.beginPath(); spectrumCtx.moveTo(margin.left, py); spectrumCtx.lineTo(width - margin.right, py); spectrumCtx.stroke();
+    spectrumCtx.fillText(value.toPrecision(3), margin.left - 8, py);
+  }
+  spectrumCtx.strokeStyle = '#8b96b3';
+  spectrumCtx.beginPath();
+  spectrumCtx.moveTo(margin.left, margin.top); spectrumCtx.lineTo(margin.left, height - margin.bottom);
+  spectrumCtx.lineTo(width - margin.right, height - margin.bottom);
+  spectrumCtx.stroke();
+  spectrumCtx.textAlign = 'center';
+  spectrumCtx.fillStyle = '#e6ebf7';
+  spectrumCtx.fillText('Wavelength (µm)', margin.left + plotWidth / 2, height - 12);
+  spectrumCtx.save();
+  spectrumCtx.translate(16, margin.top + plotHeight / 2);
+  spectrumCtx.rotate(-Math.PI / 2);
+  spectrumCtx.fillText('Flux (MJy/sr)', 0, 0);
+  spectrumCtx.restore();
+
+  for (const point of points) {
+    const px = x(point.wavelength), py = y(point.flux);
+    const error = Number(point.err);
+    spectrumCtx.strokeStyle = detectorColors[(Number(point.detector) - 1 + detectorColors.length) % detectorColors.length];
+    spectrumCtx.fillStyle = spectrumCtx.strokeStyle;
+    if (Number.isFinite(error)) {
+      const top = y(point.flux + error), bottom = y(point.flux - error);
+      spectrumCtx.beginPath(); spectrumCtx.moveTo(px, top); spectrumCtx.lineTo(px, bottom);
+      spectrumCtx.moveTo(px - 3, top); spectrumCtx.lineTo(px + 3, top);
+      spectrumCtx.moveTo(px - 3, bottom); spectrumCtx.lineTo(px + 3, bottom);
+      spectrumCtx.stroke();
+    }
+    spectrumCtx.beginPath(); spectrumCtx.arc(px, py, 3.5, 0, Math.PI * 2); spectrumCtx.fill();
+  }
+}
+
+async function inspectPoint(event) {
+  if (!imgs.length) return;
+  const rect = cv.getBoundingClientRect();
+  const x = Math.max(0, Math.min(cv.width - 1, (event.clientX - rect.left) / rect.width * cv.width));
+  const y = Math.max(0, Math.min(cv.height - 1, (event.clientY - rect.top) / rect.height * cv.height));
+  const scaleDeg = meta.fov_arcmin / 60 / cv.width;
+  const cosDec = Math.cos(meta.dec * Math.PI / 180);
+  marker = {
+    x, y,
+    ra: meta.ra - (x - (cv.width - 1) / 2) * scaleDeg / cosDec,
+    dec: meta.dec + ((cv.height - 1) / 2 - y) * scaleDeg
+  };
+  draw();
+  const request = ++spectrumRequest;
+  clearSpectrum('Loading spectrum…');
+  const params = new URLSearchParams({
+    ra: String(meta.ra), dec: String(meta.dec), fov: String(meta.fov_arcmin),
+    x: String(x), y: String(cv.height - 1 - y), source: meta.source
+  });
+  try {
+    const response = await fetch('/api/spectrum?' + params);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || `The request failed (${response.status}).`);
+    if (request !== spectrumRequest) return;
+    if (!Array.isArray(result.points) || result.points.length === 0) {
+      clearSpectrum('No spectrum points are available at this position.');
+      return;
+    }
+    const points = result.points.filter(point =>
+      Number.isFinite(point.wavelength) && Number.isFinite(point.flux)
+    );
+    if (points.length === 0) {
+      clearSpectrum('No valid spectrum points are available at this position.');
+      return;
+    }
+    spectrumPoints = points;
+    if (activeDetectors.size === 6) {
+      plotSpectrum(points);
+      setSpectrumStatus(`${points.length} spectrum point(s) from ${meta.source === 'live' ? 'live SPHEREx data' : 'synthetic demo data'}.`);
+    } else {
+      updateSpectrumForDetectors();
+    }
+  } catch (error) {
+    if (request === spectrumRequest) setSpectrumStatus(`Unable to load spectrum. ${error.message}`, true);
+  }
+}
+
+cv.addEventListener('click', inspectPoint);
 function start(){ clearInterval(timer); timer = setInterval(() => { if (playing && frames.length) { idx = (idx + 1) % frames.length; draw(); } }, +$('speed').value); }
 
+for (const button of document.querySelectorAll('.detector-filter')) {
+  button.addEventListener('click', () => {
+    const detector = Number(button.dataset.detector);
+    if (activeDetectors.has(detector)) activeDetectors.delete(detector);
+    else activeDetectors.add(detector);
+    applyDetectorFilters();
+  });
+}
+$('detectors_all').onclick = () => {
+  for (let detector = 1; detector <= 6; detector++) activeDetectors.add(detector);
+  applyDetectorFilters();
+};
+
 $('go').onclick = () => search();
+$('copy_link').onclick = copyCurrentLink;
 $('play').onclick = () => { playing = !playing; $('play').textContent = playing ? 'Pause' : 'Play'; };
 $('scrub').oninput = e => { playing = false; $('play').textContent = 'Play'; idx = +e.target.value; draw(); };
 $('speed').onchange = start;
