@@ -13,13 +13,17 @@
   .sub { color:var(--mute); font-size:13px; }
   main { max-width:980px; margin:0 auto; padding:16px; display:grid; gap:14px; }
   .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .explanation { margin:0; color:var(--text); }
+  .explanation-note { margin:6px 0 0; color:var(--mute); font-size:13px; }
   .row { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
   label { display:grid; gap:4px; font-size:12px; color:var(--mute); }
   input, select, button { font:inherit; color:var(--text); background:#0e1424; border:1px solid var(--line); border-radius:6px; padding:8px 10px; }
-  input { width:150px; } button { cursor:pointer; } button:hover { border-color:var(--accent); }
+  input { width:150px; } button { min-height:44px; cursor:pointer; } button:hover { border-color:var(--accent); }
+  button:disabled { cursor:wait; opacity:.7; }
   button.primary { background:var(--accent); color:#1a1200; border-color:var(--accent); font-weight:600; }
   .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center; font-size:13px; color:var(--mute); }
-  .chips button { padding:4px 10px; font-size:13px; }
+  .chips button { min-height:40px; padding:4px 10px; font-size:13px; }
+  .chips button[aria-pressed="true"] { background:var(--accent); color:#1a1200; border-color:var(--accent); font-weight:600; }
   .banner { display:none; background:#3a1d1d; border:1px solid var(--warn); color:#ffd0d0; padding:8px 12px; border-radius:8px; font-size:13px; }
   .view { display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:14px; }
   @media (max-width:720px){ .view { grid-template-columns:1fr; } }
@@ -29,7 +33,20 @@
   .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .controls input[type=range] { flex:1; min-width:140px; padding:0; width:auto; }
   #status { color:var(--mute); font-size:13px; min-height:20px; }
+  #status.loading::before { content:""; display:inline-block; width:12px; height:12px; margin-right:8px; vertical-align:-2px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
   #status.err { color:var(--warn); }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (max-width:480px) {
+    header { padding:14px 16px; }
+    main { padding:12px; gap:12px; }
+    .row > label { flex:1 1 140px; min-width:0; }
+    .row > label input, .row > label select { width:100%; max-width:100%; }
+    .row > button { flex:1 1 100%; }
+    .view { min-width:0; }
+    .view dl { grid-template-columns:auto minmax(0,1fr); }
+    .controls { gap:8px; }
+    .controls input[type=range] { min-width:100px; }
+  }
 </style>
 </head>
 <body>
@@ -38,6 +55,10 @@
   <div class="sub">Enter a patch of sky and watch how SPHEREx's view of it changes over time. Moving dots are comets, asteroids, brown dwarfs or nearby stars.</div>
 </header>
 <main>
+  <div class="panel">
+    <p class="explanation"><b>What am I looking at?</b> Stars that stay in place are far away. A dot that shifts between frames may be a nearby object, such as a comet, asteroid, brown dwarf or nearby star.</p>
+    <p class="explanation-note">Frames play in time order. Brightness can change because each frame may show a different wavelength.</p>
+  </div>
   <div class="panel">
     <div class="row">
       <label>RA (deg or 08h55m10.8s)<input id="ra" value="133.7951"></label>
@@ -57,7 +78,7 @@
   </div>
 
   <div class="banner" id="banner"><b>SYNTHETIC DEMO.</b> These images are generated, not real SPHEREx data. They only show how the viewer works.</div>
-  <div id="status">Pick a target or enter coordinates, then press Search.</div>
+  <div id="status" role="status" aria-live="polite">Pick a target or enter coordinates, then press Search.</div>
 
   <div class="view panel">
     <canvas id="cv" width="64" height="64"></canvas>
@@ -84,34 +105,63 @@
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d');
 let frames = [], imgs = [], idx = 0, playing = true, timer = null, meta = {};
+let targets = {}, targetButtons = new Map();
 
 // Example targets come from the backend so there is one source of truth.
 fetch('/api/targets').then(r => r.json()).then(t => {
+  targets = t;
   for (const [name, c] of Object.entries(t)) {
-    const b = document.createElement('button'); b.textContent = name;
+    const b = document.createElement('button'); b.textContent = name; b.setAttribute('aria-pressed', 'false');
     b.onclick = () => { $('ra').value = c.ra; $('dec').value = c.dec; search(); };
+    targetButtons.set(name, b);
     $('chips').appendChild(b);
   }
+  updateTargetSelection();
 });
+
+function updateTargetSelection() {
+  const selected = Object.entries(targets).find(([, c]) =>
+    Number.isFinite(Number(meta.ra)) && Number.isFinite(Number(meta.dec)) &&
+    Math.abs(Number(c.ra) - Number(meta.ra)) < 1e-6 &&
+    Math.abs(Number(c.dec) - Number(meta.dec)) < 1e-6
+  )?.[0];
+  for (const [name, button] of targetButtons) {
+    button.setAttribute('aria-pressed', String(name === selected));
+  }
+}
 
 function setStatus(msg, err=false){ $('status').textContent = msg; $('status').className = err ? 'err' : ''; }
 
 async function search(pushUrl = true) {
+  const searchButton = $('go');
+  if (searchButton.disabled) return;
   const p = new URLSearchParams({ ra:$('ra').value, dec:$('dec').value, fov:$('fov').value, mode:$('mode').value, source:$('source').value });
   if (pushUrl) history.replaceState(null, '', '?' + p.toString());
   $('banner').style.display = $('source').value === 'synthetic' ? 'block' : 'none';
-  setStatus('Fetching images… live queries can take a while.');
+  searchButton.disabled = true;
+  setStatus($('source').value === 'live'
+    ? 'Searching live SPHEREx data… this can take 10–60 seconds.'
+    : 'Loading synthetic demo images…');
+  $('status').classList.add('loading');
   clearInterval(timer);
   try {
     const r = await fetch('/api/frames?' + p);
     const j = await r.json();
-    if (!r.ok) throw new Error(j.detail || r.statusText);
+    if (!r.ok) {
+      const detail = j.detail;
+      if (r.status === 400) throw new Error(detail ? `Please check the coordinates and settings. ${detail}` : 'Please check the coordinates and settings.');
+      if (r.status === 404) throw new Error('No SPHEREx images cover this position yet.');
+      if (r.status === 502) throw new Error(detail ? `IRSA is having a problem right now. ${detail}` : 'IRSA is having a problem right now. Please try again later.');
+      throw new Error(detail || `The request failed (${r.status}). Please try again.`);
+    }
     meta = j; frames = j.frames;
     imgs = await Promise.all(frames.map(f => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = 'data:image/png;base64,' + f.png; })));
     $('scrub').max = frames.length - 1; idx = 0; playing = true; $('play').textContent = 'Pause';
+    updateTargetSelection();
     setStatus(`${frames.length} frame(s) loaded.`);
     draw(); start();
-  } catch (e) { setStatus('Error: ' + e.message, true); }
+  } catch (e) { setStatus('Unable to load frames. ' + e.message, true); }
+  finally { searchButton.disabled = false; }
 }
 
 function draw() {
@@ -121,7 +171,7 @@ function draw() {
   $('f_n').textContent = `${idx + 1} / ${frames.length}`;
   $('f_t').textContent = f.mjd.toFixed(2);
   $('f_d').textContent = f.detector || '–';
-  $('f_w').textContent = Number.isFinite(f.wavelength) ? f.wavelength.toFixed(2) + ' µm' : 'not available yet';
+  $('f_w').textContent = f.wavelength !== null && typeof f.wavelength === 'number' && Number.isFinite(f.wavelength) ? f.wavelength.toFixed(2) + ' µm' : 'not available';
   $('f_f').textContent = f.flags;
   $('f_p').textContent = `RA ${meta.ra.toFixed(4)}°, Dec ${meta.dec.toFixed(4)}°, ${meta.fov_arcmin}′ wide`;
   $('scrub').value = idx;
