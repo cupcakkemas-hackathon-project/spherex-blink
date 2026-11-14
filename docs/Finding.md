@@ -13,25 +13,28 @@
 
 ## Automated API test results
 
-All checks passed:
+All current checks passed:
 
 - `/healthz` returned HTTP 200.
-- The live frames endpoint returned HTTP 200.
-- 57 live frames were returned.
-- First request completed in 21.5 seconds.
-- Cached repeat request completed in 0.07 seconds.
-- The second request was under one second.
-- Frame timestamps increased correctly.
-- All six detectors were represented: `{1: 8, 2: 10, 3: 9, 4: 10, 5: 10, 6: 10}`.
-- Every detector had at least three frames.
-- Wavelengths were valid.
-- `/api/spectrum` returned HTTP 200.
-- The spectrum returned 57 valid points.
-- Spectrum wavelengths were sorted.
-- Spectrum contained no NaN flux or error values.
-- Different image pixels produced different wavelength values.
-- Centre wavelength coverage was 0.82-4.97 microns.
-- Invalid coordinate inputs were rejected correctly.
+- Single/live view returned 58 frames in 16.9 seconds.
+- Stack/live view returned 30 frames from all six detectors.
+- Difference/live view returned 58 frames.
+- Timestamps increased correctly in all three views.
+- Single detector counts: `{1: 8, 2: 10, 3: 10, 4: 10, 5: 10, 6: 10}`.
+- Stack detector counts: `{1: 3, 2: 5, 3: 7, 4: 3, 5: 5, 6: 7}`.
+- Difference detector counts: `{1: 8, 2: 10, 3: 10, 4: 10, 5: 10, 6: 10}`.
+- Wavelengths were present in single, stack, and difference responses.
+- Spectrum returned HTTP 200 with 57 points.
+- Spectrum was confirmed as non-synthetic.
+- Spectrum flux and error values were present.
+- Spectrum wavelengths were valid and sorted.
+- Spectrum coverage by detector was:
+  - D1: 0.816870-1.039132 micron
+  - D2: 1.152649-1.591008 micron
+  - D3: 1.640745-2.382276 micron
+  - D4: 2.428191-3.535491 micron
+  - D5: 3.886603-4.370041 micron
+  - D6: 4.425614-4.968323 micron
 
 ## Manual browser observations
 
@@ -51,14 +54,26 @@ All checks passed:
 
 ## Issues and limitations
 
-- The first live request took 21.5 seconds, slightly above the target of 20 seconds.
+- The current cold single/live request took 16.9 seconds; this is within the 20-second target but still depends on IRSA response time.
 - Some IRSA cutouts may be skipped because of intermittent HTTP 503 responses.
+- A later live search showed: `Error: IRSA is temporarily unavailable: IRSA did not return any requested cutouts`.
+- This means IRSA returned no usable cutouts for that request after the backend's retry attempts; retrying later may succeed.
 - Frame counts can vary between runs.
 - New searches can take more than 30 seconds for some targets.
 - The no-data query needs a timely, clear user-facing message.
 - While a new search is loading, old frame metadata may remain visible.
 - Mobile and deployed-site testing were not performed in this local run.
 
+## Latest observed failure
+
+The browser displayed:
+
+```text
+Error: IRSA is temporarily unavailable: IRSA did not return any requested cutouts
+```
+
+This is a live IRSA/data availability failure, not a frontend rendering error. The backend retries cutout downloads and skips individual failures, but reports an error when all requested cutouts fail.
+
 ## Overall result
 
-The `main` branch passed all automated API verification checks. Core live-data loading, caching, detector coverage, wavelength handling, and spectrum generation are working locally.
+The `main` branch passed all current automated API verification checks. Core live-data loading in all three views, detector coverage, wavelength handling, and non-synthetic spectrum generation are working locally.
