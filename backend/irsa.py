@@ -18,6 +18,7 @@ from astropy import log as astropy_log
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
+from astropy.table import vstack
 from astropy.wcs import WCS
 from reproject import reproject_interp
 
@@ -85,8 +86,44 @@ def query_images(ra: float, dec: float, fov_arcmin: float):
 
     coord = SkyCoord(ra * u.deg, dec * u.deg)
     collections = [name.strip() for name in COLLECTION.split(",") if name.strip()]
-    tbl = Irsa.query_sia(pos=(coord, 30 * u.arcsec), collection=collections)
-    return tbl
+    if not collections:
+        raise IRSAUnavailableError("No SPHEREx collections are configured")
+
+    tables = []
+    failures = []
+    for collection in collections:
+        try:
+            table = Irsa.query_sia(
+                pos=(coord, 30 * u.arcsec), collection=[collection]
+            )
+            if len(table) == 0:
+                failures.append(f"{collection}: no rows returned")
+                LOGGER.warning(
+                    "SPHEREx collection %s returned no rows", collection
+                )
+                continue
+            tables.append(table)
+        except Exception as error:
+            failures.append(f"{collection}: {error}")
+            LOGGER.warning(
+                "SPHEREx collection %s failed: %s", collection, error
+            )
+
+    if not tables:
+        details = "; ".join(failures) or "no rows returned"
+        raise IRSAUnavailableError(
+            f"All configured SPHEREx collections failed ({details})"
+        )
+
+    merged = vstack(tables, metadata_conflicts="silent")
+    seen_urls = set()
+    keep = []
+    for index, row in enumerate(merged):
+        url = str(row["access_url"])
+        if url not in seen_urls:
+            seen_urls.add(url)
+            keep.append(index)
+    return merged[keep]
 
 
 def _row_url(row, ra, dec, size_deg) -> str:
