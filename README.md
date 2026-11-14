@@ -96,7 +96,61 @@ A working website, using **real SPHEREx data**, where anyone types coordinates a
 
 ---
 
-## 5. Run it
+## 5. Project details
+
+### What it does
+
+SPHEREx Blink lets a user enter a sky position as decimal or sexagesimal
+coordinates and view real SPHEREx images of that area over time. The images
+are aligned to a common north-up, east-left grid so that changes and moving
+objects are easier to inspect.
+
+The tool provides three views:
+
+- **All frames:** shows observations in time order as a blink animation.
+- **Stack by detector:** combines frames from each detector to improve
+  visibility of faint sources.
+- **Difference:** subtracts a reference image to highlight changes.
+
+It also displays frame metadata and provides a spectrum API for extracting
+flux, error, wavelength, date, and detector values at a selected pixel.
+
+### Benefits and intended impact
+
+The project makes archival infrared data easier for non-specialists to
+explore. Instead of inspecting large FITS files manually, users can enter a
+position and quickly compare observations to look for moving or changing
+objects such as brown dwarfs, nearby stars, asteroids, and comets.
+
+The intended impact is to help more people participate in identifying
+interesting sources in SPHEREx data and to support public discovery of nearby
+or moving objects.
+
+### Tools and technologies
+
+- Python 3.10+
+- FastAPI and Uvicorn for the API and web server
+- HTML, CSS, and vanilla JavaScript for the browser interface
+- Astropy for coordinates, FITS files, and WCS
+- `reproject` for common-grid image alignment
+- NumPy and Pillow for image processing and PNG output
+- NASA/IPAC IRSA for real SPHEREx data and cutouts
+- Gaia and SIMBAD as astronomical reference sources for target verification
+
+### Creativity and design considerations
+
+The project combines an accessible blink animation with detector stacking,
+difference imaging, wavelength metadata, and a spectrum endpoint. The team
+considered real-data validity, changing wavelengths between observations,
+proper motion, image alignment, intermittent archive failures, response time,
+and the need to keep synthetic data clearly labelled as fake.
+
+The design prioritizes a small, understandable tool that works with real
+archive data rather than presenting synthetic results as discoveries.
+
+---
+
+## 6. Run it
 
 You need Python 3.10 or newer.
 
@@ -112,30 +166,55 @@ Check that the real data path works:
 python -m backend.irsa_check
 ```
 
+Run the local API verification:
+
+```bash
+python scripts/verify_api.py
+```
+
+This checks health, live frames, all three views, detector coverage,
+wavelengths, spectrum output, caching and invalid input handling.
+
 URL queries work for embedding:
 `/?ra=08h55m10.831s&dec=-7d14m42.53s&fov=2&mode=single&source=live`
 
+The current SIMBAD-based coordinates for the five test targets are recorded
+in [`docs/targets.md`](docs/targets.md).
+
 ---
 
-## 6. Current status (honest)
+## 7. Current status (honest)
 
 | Part | State |
 |---|---|
-| Interface, player, stack/diff modes, URL parameters, coordinate parsing | Working, tested with synthetic data |
+| Interface, player, stack/diff modes, URL parameters, coordinate parsing | Working locally |
 | Synthetic demo mode | Working. **Fake data**, always labelled in the UI |
-| Live IRSA pipeline (`backend/irsa.py`) | **Written but never run against the real archive.** Fix anything marked `# VERIFY` after running `irsa_check` |
-| Wavelength shown per frame | Not done yet |
-| Spectra, Gaia/WISE overlay | Not started |
+| Live IRSA pipeline (`backend/irsa.py`) | Working locally with real SPHEREx data |
+| Wavelength, detector and flag metadata | Working locally |
+| Spectrum endpoint | Working locally with real frame data |
+| Public deployment and mobile testing | Not tested |
 
 Known caveats:
 
-- Coordinates for Barnard's Star, Epsilon Indi B, RW Aurigae and R Draconis are approximate. Check them.
+- IRSA can temporarily return HTTP 503 or no usable cutouts, so frame counts
+  and load times can vary.
+- The first live request can take several seconds; cached repeats are faster.
+- The five SIMBAD-based target coordinates are listed in `docs/targets.md`.
 - A frame's brightness can change because the observed wavelength changed, not because the object is variable.
 - SPHEREx pixels are about 6.2 arcseconds wide, so slow movers show only subtle motion.
 
+Latest local verification on `main`:
+
+- Single/live view: 58 frames in 16.9 seconds.
+- Stack/live view: 30 frames.
+- Difference/live view: 58 frames.
+- Spectrum: 57 valid non-synthetic points.
+- All automated API checks passed.
+- Full findings are recorded in [`docs/Finding.md`](docs/Finding.md).
+
 ---
 
-## 7. Project layout
+## 8. Project layout
 
 ```
 backend/app.py        API (/api/frames, /api/targets) and page hosting
@@ -143,13 +222,18 @@ backend/irsa.py       IRSA query, cutouts, alignment to a common grid, disk cach
 backend/imaging.py    stacking, differencing, contrast stretch, PNG encoding
 backend/demo.py       synthetic (fake) frames
 backend/irsa_check.py first test to run with real internet access
+backend/spectrum.py   spectrum extraction
 frontend/index.html   the single-page viewer
+scripts/verify_api.py automated API verification
+scripts/warm_cache.py prefetch real target data
 docs/                 screenshots, role task files (docs/roles/), notes
+docs/targets.md       SIMBAD-based target coordinates
+docs/Finding.md       test findings and limitations
 AGENTS.md             shared context and rules for AI coding agents and the team
 CLAUDE.md, .github/copilot-instructions.md   point agents to AGENTS.md
 ```
 
-## 8. Team roles
+## 9. Team roles
 
 Each person has a detailed task file for themselves and their coding agent:
 
@@ -160,6 +244,6 @@ Each person has a detailed task file for themselves and their coding agent:
 | C, Frontend | `docs/roles/C-frontend.md` |
 | D, Product, deploy and presentation | `docs/roles/D-product-deploy.md` |
 
-## 9. Credits
+## 10. Credits
 
 SPHEREx data comes from NASA/IPAC IRSA. If you publish results, include the acknowledgement requested by IRSA for SPHEREx data products.
