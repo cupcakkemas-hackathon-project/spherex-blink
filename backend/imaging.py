@@ -5,23 +5,51 @@ import io
 import numpy as np
 from PIL import Image
 
+STACK_WINDOW_DAYS = 7.0
+
 
 def stretch(img: np.ndarray) -> np.ndarray:
     """asinh stretch to 0-255 uint8, robust to outliers."""
-    a = np.nan_to_num(img.astype(float), nan=0.0)
-    lo, hi = np.percentile(a, [5, 99.7])
+    a = img.astype(float, copy=False)
+    valid = np.isfinite(a)
+    out = np.zeros(a.shape, dtype=np.uint8)
+    if not valid.any():
+        return out
+
+    lo, hi = np.percentile(a[valid], [5, 99.7])
     if hi <= lo:
         hi = lo + 1e-9
-    a = np.clip((a - lo) / (hi - lo), 0, 1)
-    a = np.arcsinh(a * 10) / np.arcsinh(10)
-    return (a * 255).astype(np.uint8)
+    scaled = np.clip((a[valid] - lo) / (hi - lo), 0, 1)
+    scaled = np.arcsinh(scaled * 10) / np.arcsinh(10)
+    out[valid] = (scaled * 255).astype(np.uint8)
+    return out
 
 
-def to_png_b64(img: np.ndarray) -> str:
+def stretch_symmetric(img: np.ndarray) -> np.ndarray:
+    """Map negative and positive residuals symmetrically around mid-gray."""
+    a = img.astype(float, copy=False)
+    valid = np.isfinite(a)
+    out = np.zeros(a.shape, dtype=np.uint8)
+    if not valid.any():
+        return out
+
+    limit = np.percentile(np.abs(a[valid]), 99.7)
+    if limit <= 0:
+        out[valid] = 128
+        return out
+
+    scaled = np.clip(a[valid] / limit, -1, 1)
+    scaled = np.arcsinh(scaled * 10) / np.arcsinh(10)
+    out[valid] = np.round((scaled + 1) * 127.5).astype(np.uint8)
+    return out
+
+
+def to_png_b64(img: np.ndarray, *, symmetric: bool = False) -> str:
     buf = io.BytesIO()
     # FITS/reprojected arrays have row 0 = south edge; PNG row 0 = top of picture.
     # Flip so the picture is north-up (east is left, because the grid has RA increasing leftwards).
-    Image.fromarray(np.flipud(stretch(img))).save(buf, format="PNG")
+    rendered = stretch_symmetric(img) if symmetric else stretch(img)
+    Image.fromarray(np.flipud(rendered)).save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()
 
 
@@ -29,26 +57,67 @@ def apply_mode(frames: list[dict], mode: str) -> list[dict]:
     """frames: dicts with 'data' (2D array) and metadata, sorted by time.
 
     single -> unchanged
-    stack  -> mean of all frames from the same detector, placed at the mean time
-              (improves signal-to-noise; the six detector arrays are separate bands)
-    diff   -> each frame minus the median of all frames (static sky cancels,
+    stack  -> mean within fixed 7-day windows per detector
+    diff   -> each frame minus its detector's median (static sky cancels,
               moving objects leave a +/- pair)
     """
     if mode == "diff" and frames:
-        med = np.nanmedian(np.stack([f["data"] for f in frames]), axis=0)
-        return [{**f, "data": f["data"] - med} for f in frames]
-    if mode == "stack":
-        groups: dict[int, list[dict]] = {}
+        groups: dict[int, list[np.ndarray]] = {}
         for f in frames:
-            groups.setdefault(f["detector"], []).append(f)
+            groups.setdefault(f["detector"], []).append(f["data"])
+        medians = {
+            detector: np.ma.median(
+                np.ma.masked_invalid(np.stack(data)), axis=0
+            ).filled(np.nan)
+            for detector, data in groups.items()
+        }
+        diff_flag = "difference vs. detector median"
         out = []
-        for det, fs in sorted(groups.items()):
+        for f in frames:
+            flags = f.get("flags") or ""
             out.append({
+                **f,
+                "data": np.asarray(f["data"], dtype=float) - medians[f["detector"]],
+                "flags": f"{flags}; {diff_flag}" if flags else diff_flag,
+            })
+        return sorted(out, key=lambda f: f["mjd"])
+    if mode == "stack":
+        groups: dict[tuple[int, int], list[dict]] = {}
+        for f in frames:
+            week = int(np.floor(float(f["mjd"]) / STACK_WINDOW_DAYS))
+            groups.setdefault((f["detector"], week), []).append(f)
+        out = []
+        for (det, _week), fs in sorted(groups.items()):
+            data = np.stack([np.asarray(f["data"], dtype=float) for f in fs])
+            valid = np.isfinite(data)
+            stacked_data = np.full(data.shape[1:], np.nan)
+            stacked_frame = {
                 "detector": det,
                 "mjd": float(np.mean([f["mjd"] for f in fs])),
                 "wavelength": float(np.mean([f["wavelength"] for f in fs])),
                 "flags": f"{len(fs)} frames stacked",
-                "data": np.nanmean(np.stack([f["data"] for f in fs]), axis=0),
-            })
+            }
+
+            if all(f.get("variance") is not None for f in fs):
+                variance = np.stack([
+                    np.asarray(f["variance"], dtype=float) for f in fs
+                ])
+                valid &= np.isfinite(variance) & (variance > 0)
+                weights = np.zeros_like(data)
+                np.divide(1.0, variance, out=weights, where=valid)
+                weight_sum = np.sum(weights, axis=0)
+                weighted_sum = np.sum(np.where(valid, data, 0) * weights, axis=0)
+                np.divide(weighted_sum, weight_sum, out=stacked_data, where=weight_sum > 0)
+
+                stacked_variance = np.full(data.shape[1:], np.nan)
+                np.divide(1.0, weight_sum, out=stacked_variance, where=weight_sum > 0)
+                stacked_frame["variance"] = stacked_variance
+            else:
+                count = np.sum(valid, axis=0)
+                total = np.sum(np.where(valid, data, 0), axis=0)
+                np.divide(total, count, out=stacked_data, where=count > 0)
+
+            stacked_frame["data"] = stacked_data
+            out.append(stacked_frame)
         return sorted(out, key=lambda f: f["mjd"])
     return frames
