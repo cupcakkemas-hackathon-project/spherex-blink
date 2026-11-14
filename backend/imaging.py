@@ -25,11 +25,31 @@ def stretch(img: np.ndarray) -> np.ndarray:
     return out
 
 
-def to_png_b64(img: np.ndarray) -> str:
+def stretch_symmetric(img: np.ndarray) -> np.ndarray:
+    """Map negative and positive residuals symmetrically around mid-gray."""
+    a = img.astype(float, copy=False)
+    valid = np.isfinite(a)
+    out = np.zeros(a.shape, dtype=np.uint8)
+    if not valid.any():
+        return out
+
+    limit = np.percentile(np.abs(a[valid]), 99.7)
+    if limit <= 0:
+        out[valid] = 128
+        return out
+
+    scaled = np.clip(a[valid] / limit, -1, 1)
+    scaled = np.arcsinh(scaled * 10) / np.arcsinh(10)
+    out[valid] = np.round((scaled + 1) * 127.5).astype(np.uint8)
+    return out
+
+
+def to_png_b64(img: np.ndarray, *, symmetric: bool = False) -> str:
     buf = io.BytesIO()
     # FITS/reprojected arrays have row 0 = south edge; PNG row 0 = top of picture.
     # Flip so the picture is north-up (east is left, because the grid has RA increasing leftwards).
-    Image.fromarray(np.flipud(stretch(img))).save(buf, format="PNG")
+    rendered = stretch_symmetric(img) if symmetric else stretch(img)
+    Image.fromarray(np.flipud(rendered)).save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()
 
 
@@ -38,12 +58,29 @@ def apply_mode(frames: list[dict], mode: str) -> list[dict]:
 
     single -> unchanged
     stack  -> mean within fixed 7-day windows per detector
-    diff   -> each frame minus the median of all frames (static sky cancels,
+    diff   -> each frame minus its detector's median (static sky cancels,
               moving objects leave a +/- pair)
     """
     if mode == "diff" and frames:
-        med = np.nanmedian(np.stack([f["data"] for f in frames]), axis=0)
-        return [{**f, "data": f["data"] - med} for f in frames]
+        groups: dict[int, list[np.ndarray]] = {}
+        for f in frames:
+            groups.setdefault(f["detector"], []).append(f["data"])
+        medians = {
+            detector: np.ma.median(
+                np.ma.masked_invalid(np.stack(data)), axis=0
+            ).filled(np.nan)
+            for detector, data in groups.items()
+        }
+        diff_flag = "difference vs. detector median"
+        out = []
+        for f in frames:
+            flags = f.get("flags") or ""
+            out.append({
+                **f,
+                "data": np.asarray(f["data"], dtype=float) - medians[f["detector"]],
+                "flags": f"{flags}; {diff_flag}" if flags else diff_flag,
+            })
+        return sorted(out, key=lambda f: f["mjd"])
     if mode == "stack":
         groups: dict[tuple[int, int], list[dict]] = {}
         for f in frames:

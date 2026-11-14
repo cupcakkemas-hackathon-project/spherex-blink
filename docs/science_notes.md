@@ -79,6 +79,12 @@ The current Role A loader does not yet include `variance` in its frame dictionar
 
 On 2026-11-14, a live 3-arcmin WISE 0855 API request returned 8 chronological stack frames spanning MJD 60800.746–60980.321 and detectors D1–D6. The corresponding 59-input run formed groups of 3–15 frames; a rough high-pass noise comparison gave a median stack/input ratio of 0.637. This is only an image-texture check, not calibrated uncertainty. I could not confidently identify WISE 0855 or verify its motion in the stacks, so the moving-source acceptance check remains open; its coordinates and epoch also need Role D's verification.
 
+## B4: Detector-specific differences
+
+`diff` now subtracts each frame's median reference made from frames of the same detector, then returns frames in MJD order and appends `difference vs. detector median` to the flags text. `stretch_symmetric` clips at the 99.7th percentile of absolute residuals and maps zero to mid-gray, with negative and positive residuals on opposite sides. The regular stretch remains unchanged for single and stacked images.
+
+The current Role A route still calls `to_png_b64` without `symmetric=True`. Ask Dhiya to pass `symmetric=(mode == "diff")` so the API actually displays both residual signs. In a real 3-arcmin WISE 0855 run, 59 frames across D1–D6 produced 59 chronological differences. The inspected frames still showed source residuals, and I could not confidently identify a moving object; therefore the visual acceptance check is not yet met.
+
 ## Sources
 
 - [IRSA tutorial: Introduction to SPHEREx Spectral Images](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro)
