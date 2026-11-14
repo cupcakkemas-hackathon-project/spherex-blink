@@ -68,6 +68,8 @@ def frames(ra: str, dec: str, fov: float = 2.0, mode: str = "single", source: st
         try:
             from backend import irsa
             raw = irsa.get_raw_frames(ra_d, dec_d, fov)
+        except irsa.IRSAUnavailableError as e:
+            raise HTTPException(502, f"IRSA is temporarily unavailable: {e}")
         except Exception as e:
             raise HTTPException(502, f"Live SPHEREx query failed: {e}")
         if not raw:
@@ -98,3 +100,58 @@ def index():
 
 
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
+
+
+# --- spectrum (B) ---
+@app.get("/api/spectrum")
+def spectrum(
+    ra: str,
+    dec: str,
+    fov: float = 2.0,
+    x: float = 31.5,
+    y: float = 31.5,
+    source: str = "live",
+):
+    try:
+        ra_d, dec_d = parse_angle(ra, True), parse_angle(dec, False)
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+    if not (0 <= ra_d < 360 and -90 <= dec_d <= 90):
+        raise HTTPException(400, "RA must be 0-360 deg and Dec -90 to 90 deg")
+    if not all(math.isfinite(value) for value in (fov, x, y)):
+        raise HTTPException(400, "fov, x and y must be finite numbers")
+    if not 0.5 <= fov <= 10:
+        raise HTTPException(400, "fov must be between 0.5 and 10 arcmin")
+    if not 0 <= x <= SIZE_PX - 1 or not 0 <= y <= SIZE_PX - 1:
+        raise HTTPException(400, "x and y must be between 0 and 63")
+    if source not in ("live", "synthetic"):
+        raise HTTPException(400, "source must be live or synthetic")
+
+    # The PNG is vertically flipped for display; the extractor uses array rows.
+    array_y = SIZE_PX - 1 - y
+    if source == "synthetic":
+        raw = demo.make_frames(ra_d, dec_d)
+    else:
+        try:
+            from backend import irsa
+            raw = irsa.get_raw_frames(
+                ra_d, dec_d, fov, sample_pixel=(x, array_y)
+            )
+        except irsa.IRSAUnavailableError as error:
+            raise HTTPException(502, f"IRSA is temporarily unavailable: {error}")
+        except Exception as error:
+            raise HTTPException(502, f"Live SPHEREx query failed: {error}")
+        if not raw:
+            raise HTTPException(404, "No SPHEREx images cover that position yet.")
+
+    try:
+        from backend.spectrum import extract_spectrum
+        points = extract_spectrum(raw, x, array_y)
+    except ImportError as error:
+        raise HTTPException(502, f"Spectrum extractor is unavailable: {error}")
+    except Exception as error:
+        raise HTTPException(502, f"Spectrum extraction failed: {error}")
+    response = {"points": points}
+    if source == "synthetic":
+        response["source"] = "synthetic (fake demo data)"
+    return response

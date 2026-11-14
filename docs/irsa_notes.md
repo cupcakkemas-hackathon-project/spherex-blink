@@ -207,6 +207,30 @@ a lookup failure.
 numbers when known and `null` when unknown or non-finite. `GET /healthz`
 returns `{"ok": true}` without contacting IRSA.
 
+## A6 frame selection and download behavior
+
+SIA rows are grouped by detector using the verified detector segment in
+`access_url` (for example `_1D3_` means detector D3), before any cutout is
+downloaded. Each detector receives an initial fair share of
+`floor(MAX_FRAMES / 6)` frames, with remaining capacity distributed in stable
+detector-number order. Within each detector, rows are sorted by MJD and sampled
+evenly from the complete time range. URL order breaks time ties, so repeated
+requests select the same rows.
+
+The detector number read from the URL is checked against the `DETECTOR` header
+in every downloaded cutout. A mismatch causes that frame to be skipped rather
+than allowing unverified metadata into the response.
+
+Cutouts use four workers and a 30-second timeout by default
+(`IRSA_TIMEOUT_SECONDS` can override it). HTTP 503 responses and timeouts are
+retried up to three total attempts with increasing short waits; other errors
+are not retried. Successful responses are written to `.cache/` only after the
+download completes. Failed frames are skipped and the count is logged.
+
+Start the API, then run `python scripts/warm_cache.py` to request all five
+built-in targets at a 3 arcminute field of view. The script reads `TARGETS`
+from `backend.app`, so coordinate corrections are picked up automatically.
+
 ## AI disclosure record
 
 This verification note and the related code changes were prepared with
