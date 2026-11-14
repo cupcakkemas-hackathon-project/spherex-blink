@@ -63,6 +63,22 @@ For **derived stacks/mosaics**, subtract ZODI as `IMAGE - ZODI`, matching the of
 - The displayed L2 images include zodiacal background; any subtraction uses a model and may leave residuals.
 - Flags describe pixel conditions and can overlap. A flagged pixel should be treated as a warning to inspect, not as evidence of a moving astronomical object.
 
+## B2: WISE 0855 display check
+
+On 2026-11-14, a live `/api/frames` request for WISE 0855 at 3 arcmin returned 56 real frames in 135 seconds. Their MJDs were nondecreasing across 181.808 days; repeated MJDs occur for observations sharing a timestamp. The live UI at 2 arcmin loaded and played 42 real frames. The IRSA cutout service returned some HTTP 503 errors, and one frame was rejected because its target wavelength was outside the supported range; failed frames were skipped. These counts and timing are from this run, not a guarantee of future query performance. [IRSA verification notes](./irsa_notes.md)
+
+I compared the existing per-frame 5th–99.7th percentile asinh stretch with a pooled shared stretch, a per-detector shared stretch, and a robust median/MAD clipping trial on real cutouts. The shared stretches retained cross-frame brightness differences but changed contrast between frames; the clipping trial made background grain dominate. For the motion-finder display, keep **per-frame 5th–99.7th percentile asinh**: it kept faint point sources visible across the detector bands in the sample. This is a display stretch, not photometry; it hides real frame-to-frame brightness differences, so do not interpret rendered brightness as variability.
+
+`stretch` now estimates its limits from finite pixels only and paints NaN/Inf pixels black. This prevents no-coverage pixels from shifting the lower percentile. I did not add a median filter: the real sources are compact, and filtering them without validating source preservation risks removing genuine point sources. Per-pixel FLAGS are not yet passed into `data` by the current loader (it only returns a count in `frame["flags"]`), so cosmic-ray/bad-pixel masking still needs Role A's A8 implementation. Until then, isolated flagged pixels may remain visible.
+
+## B3: Time-window stacking
+
+`stack` now groups frames by detector and fixed 7-day windows anchored to MJD 0. This preserves separate wavelength bands and returns the groups in time order rather than collapsing each detector's full history into one image. If every frame in a group has a `variance` array, the stack uses per-pixel inverse-variance weighting and returns the variance of the weighted mean. Otherwise it uses the finite-pixel arithmetic mean. In either case, `flags` records how many frames were combined.
+
+The current Role A loader does not yet include `variance` in its frame dictionaries, so live app stacks currently take the arithmetic-mean path. Ask Dhiya to carry the FITS VARIANCE extension through as `frame["variance"]` before describing live stacks as inverse-variance weighted.
+
+On 2026-11-14, a live 3-arcmin WISE 0855 API request returned 8 chronological stack frames spanning MJD 60800.746–60980.321 and detectors D1–D6. The corresponding 59-input run formed groups of 3–15 frames; a rough high-pass noise comparison gave a median stack/input ratio of 0.637. This is only an image-texture check, not calibrated uncertainty. I could not confidently identify WISE 0855 or verify its motion in the stacks, so the moving-source acceptance check remains open; its coordinates and epoch also need Role D's verification.
+
 ## Sources
 
 - [IRSA tutorial: Introduction to SPHEREx Spectral Images](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro)
