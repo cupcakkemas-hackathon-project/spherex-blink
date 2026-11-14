@@ -150,12 +150,22 @@ returned a 29 by 29 pixel cutout. The IRSA cutout service is not assumed to
 have a fixed minimum here; callers should use a positive degree value suited
 to the requested field of view.
 
-## Updating
+## How updating works
 
-The app queries IRSA live, so newly searchable DR1 and QR3 images are picked up
-automatically. IRSA documents that ingestion is weekly and SIA2 availability
-can lag ingestion by about a day. The app's in-memory cache should therefore
-have a finite TTL when it is added; a process restart also clears it.
+IRSA releases new SPHEREx data weekly. For each requested sky position, this
+tool searches IRSA live, so new images appear automatically once searchable.
+IRSA says SIA2 can lag ingestion by about a day, so a just-released image may
+not appear immediately. Results are cached in memory for four hours
+(`RAW_CACHE_TTL_SECONDS` defaults to 14,400 seconds). Downloaded cutouts are
+also cached on disk by URL. Therefore, a repeated search may not show a
+brand-new image until the memory cache expires or the server restarts. To add
+or change a collection, set `SPHEREX_COLLECTION` to a comma-separated SIA2
+collection list, for example
+`spherex_dr1,spherex_qr3,spherex_dr1_deep`, then restart the server.
+Each collection is queried separately; a failed or empty collection is logged
+and skipped, while results from working collections are merged and duplicate
+image URLs are removed. If every configured collection fails, the API returns
+a clear 502 error.
 
 ## A5 raw-frame cache and variance verification
 
