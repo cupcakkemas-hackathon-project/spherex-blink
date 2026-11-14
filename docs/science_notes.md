@@ -1,0 +1,122 @@
+# SPHEREx science notes
+
+## What is in a Level 2 Spectral Image?
+
+Each Level 2 file is for one detector and one exposure. Its image pixels are calibrated surface brightness, not point-source brightness in a unit such as Jy.
+
+- **IMAGE** — calibrated surface brightness in MJy/sr. Zodiacal light has **not** been subtracted. [IRSA intro, §§6, 8](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro); [Explanatory Supplement, §2.2](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+- **FLAGS** — a per-pixel bitmask: several flags can apply to one pixel at once. The assigned bits and meanings below are from Table 16 of the [Explanatory Supplement, pp. 33–35](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf); the [IRSA intro, §9](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro) also shows how to read flag names from a file's header.
+- **VARIANCE** — an estimated variance for each calibrated surface-brightness pixel, in (MJy/sr)^2. [IRSA intro, §10](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro)
+- **ZODI** — a per-pixel model estimate of the zodiacal-light background, in MJy/sr. This background remains in IMAGE. [IRSA intro, §11](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro); [Explanatory Supplement, §§2.2, 3.2.11](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+- **PSF** — the point-spread function, describing how a point-like source is spread over pixels. Current DR1/QR3 files use an oversampled **EPSF** model; QR2 files use a **PSF** cube. [IRSA intro, §12](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro); [Data Products guide, “EPSF” and “PSF”](https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-products)
+
+## FLAGS: assigned bits and a starting mask
+
+Bit numbers are positions in the bitmap, not the numeric flag values. The supplement assigns these bits:
+
+| Bit | Name | Meaning |
+|---:|---|---|
+| 0 | TRANSIENT | An onboard transient (such as a cosmic-ray hit); can also flag charge spill from a bright source. |
+| 1 | OVERFLOW | The onboard overflow threshold was reached. |
+| 2 | SUR_ERROR | Onboard data/checksum error; together with TRANSIENT or OVERFLOW, can identify an early event. |
+| 6 | NONFUNC | Permanently unusable/dead pixel. |
+| 7 | DICHROIC | Low-throughput pixel in the Band 3/4 dichroic region; not useful for photometry. |
+| 9 | MISSING_DATA | Onboard data for the pixel was lost before archive ingest. |
+| 10 | HOT | Noisy or spurious signal; not usable for science. |
+| 11 | COLD | Abnormally low or unresponsive pixel; not usable for science. |
+| 12 | FULLSAMPLE | Full sample history is available; informational only. |
+| 14 | PHANMISS | Missing phantom pixels prevented a correction. |
+| 15 | NONLINEAR | A reliable nonlinearity correction could not be determined; exclude from most science analyses. |
+| 17 | PERSIST | Affected by persistent charge above the Level 2 threshold. |
+| 19 | OUTLIER | Flagged by the outlier-pixel detection module. |
+| 20 | CROSSTALK | Affected by ordinary crosstalk. |
+| 21 | SOURCE | Mapped to a known source; this is not itself a bad-pixel flag. |
+| 22 | GHOST | Affected by an optical ghost from a bright source in the image. |
+| 23 | GHOST_FPA | Affected by a bright source on another detector; currently unused and subsumed into GHOST_EXT. |
+| 24 | GHOST_EXT | Affected by an optical ghost from a source outside the field of view. |
+| 25 | STREAK | Affected by a detected streak, usually consistent with an Earth-orbiting object. |
+| 26 | BLOOM | Affected by charge blooming from a bright source. |
+| 27 | SNOWBALL | Affected by a large snowball event. |
+| 28 | HALO | Affected by the halo of a transient; use caution in science analysis. |
+| 29 | SATELLITE_HALO | Affected by the halo of a satellite streak; not recommended for science analysis. |
+
+The defined bit positions above are the ones listed in Table 16; do not infer meanings for unlisted positions.
+
+**Recommended starting mask for derived stacks/photometry:** follow the IRSA Mosaic Tool's L2 rule and exclude pixels with bits **0, 2, 6, 7, 9, 10, 11, 14, 15, 17, 20, 22–29**. In names: TRANSIENT, SUR_ERROR, NONFUNC, DICHROIC, MISSING_DATA, HOT, COLD, PHANMISS, NONLINEAR, PERSIST, CROSSTALK, GHOST, GHOST_FPA, GHOST_EXT, STREAK, BLOOM, SNOWBALL, HALO, SATELLITE_HALO. The mosaic propagates OVERFLOW (1), SOURCE (21), and OUTLIER (19); FULLSAMPLE (12) is informational. [Explanatory Supplement, §3.4.3, p. 46](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+
+This is the archive's mosaic recipe, not a rule to silently erase pixels from every raw blink frame. For our viewer, keep the original frame available and retain/display its flags; use the mask for derived stacks or photometry. The supplement notes that TRANSIENT can include cosmic rays or charge spill, so a flag is useful context, not proof of an astronomical mover. [Explanatory Supplement, Table 16, pp. 33–35](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+
+## Why a star's brightness changes between frames
+
+SPHEREx uses linear variable filters: wavelength changes across each detector. When the spacecraft repoints, the same star can land on pixels that measure different wavelengths. A star's spectrum is not equally bright at every wavelength, so its measured brightness can change even if the star itself did not vary. A brightness change across different wavelengths is not, by itself, evidence of variability. [IRSA intro, §§8, 8b–8c](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro); [Explanatory Supplement, §2.2](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+
+## Zodiacal light: what it is and whether to subtract it
+
+Zodiacal light is diffuse foreground light from interplanetary dust. The ZODI layer is the mission's model estimate of that background, and the Level 2 IMAGE does not have it subtracted. The model captures spatial and temporal variation but can underestimate the amplitude, so subtraction can leave residual background. [Explanatory Supplement, §§2.2, 3.2.11](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+
+For **derived stacks/mosaics**, subtract ZODI as `IMAGE - ZODI`, matching the official IRSA Mosaic Tool procedure; keep in mind the model may leave residuals. For **single-frame blinking**, do not silently replace the archived image with a zodi-subtracted one: preserve the original view, or clearly label subtraction as a processing choice. [Explanatory Supplement, §3.4.3, p. 46](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+
+## Caveats to say in the demo
+
+- Each detector image samples a wavelength that depends on where the target falls on that detector. Frames taken at different times can therefore differ in wavelength as well as time.
+- Brightness changes between frames can be caused by wavelength, image quality, or background processing; they do not prove that a star varied.
+- The displayed L2 images include zodiacal background; any subtraction uses a model and may leave residuals.
+- Flags describe pixel conditions and can overlap. A flagged pixel should be treated as a warning to inspect, not as evidence of a moving astronomical object.
+
+## B2: WISE 0855 display check
+
+On 2026-11-14, a live `/api/frames` request for WISE 0855 at 3 arcmin returned 56 real frames in 135 seconds. Their MJDs were nondecreasing across 181.808 days; repeated MJDs occur for observations sharing a timestamp. The live UI at 2 arcmin loaded and played 42 real frames. The IRSA cutout service returned some HTTP 503 errors, and one frame was rejected because its target wavelength was outside the supported range; failed frames were skipped. These counts and timing are from this run, not a guarantee of future query performance. [IRSA verification notes](./irsa_notes.md)
+
+After merging Role A's changes, a clean-server live request at 3 arcmin returned 45 frames in 214.4 seconds, spanning MJD 60800.701–61171.097 and including all six detectors. The result is a separate query from the earlier 56-frame run; intermittent IRSA cutout failures make counts and timing variable.
+
+I compared the existing per-frame 5th–99.7th percentile asinh stretch with a pooled shared stretch, a per-detector shared stretch, and a robust median/MAD clipping trial on real cutouts. The shared stretches retained cross-frame brightness differences but changed contrast between frames; the clipping trial made background grain dominate. For the motion-finder display, keep **per-frame 5th–99.7th percentile asinh**: it kept faint point sources visible across the detector bands in the sample. This is a display stretch, not photometry; it hides real frame-to-frame brightness differences, so do not interpret rendered brightness as variability.
+
+`stretch` now estimates its limits from finite pixels only and paints NaN/Inf pixels black. This prevents no-coverage pixels from shifting the lower percentile. I did not add a median filter: the real sources are compact, and filtering them without validating source preservation risks removing genuine point sources. The current loader now returns a categorical `flag_mask`, but leaves `data` unchanged, and the stack/difference and spectrum helpers do not yet apply that mask. In a live 3-arcmin WISE 0855 sample, `scripts/flag_fraction.py` found the recommended mask would hide a median 1% of pixels (maximum 48%); any-bit-set fractions had a 38% median (maximum 66%). Flagged speckles therefore remain a concern for derived images and photometry.
+
+On a fresh run on 2026-11-14, the API returned 58 live frames at 3 arcmin in 14.7 seconds; the browser UI loaded 54 live frames at its supported 5-arcmin setting, skipping six cutouts. Contact sheets showed the main background stars at consistent positions, but grain and flagged-pixel artifacts vary between frames, so the smooth-blink acceptance remains incomplete. The fov=3 URL value is not one of the frontend's select options and produced an empty `fov` request (HTTP 422); use a supported UI value such as 5 arcmin. A fresh 58-frame flag check again found a recommended-mask median of 1% (maximum 48%) and any-bit-set median of 38% (maximum 66%).
+
+## B3: Time-window stacking
+
+`stack` groups frames by detector and fixed 7-day windows anchored to MJD 0. It preserves separate wavelength bands and returns groups in time order. When all frames in a group have `variance`, it uses per-pixel inverse-variance weights; otherwise it uses the finite-pixel arithmetic mean. `flags` records the number of input frames.
+
+Role A's merged loader now carries `variance` through on the 64x64 grid. The current loader reprojects variance with `reproject_interp` just like image intensity, so proper variance propagation through interpolation has not been established; treat the resulting weights as approximate until that is reviewed.
+
+In the previous validation run, the live API returned 55 chronological WISE 0855 frames and 29 chronological stack groups. Contact sheets showed no confident WISE 0855 track, and noise reduction was not quantitatively remeasured for that sample. An earlier 59-input run had a rough high-pass noise ratio of 0.637; that is an image-texture check, not calibrated uncertainty.
+
+On a fresh 58-frame run, 16 detector/week groups had at least two inputs. A 3x3-median high-pass MAD diagnostic gave a median stacked-to-input texture ratio of 0.781, with all 16 groups below 1. This suggests reduced high-frequency texture, not calibrated noise or uncertainty; variance reprojection remains approximate, the flag mask is not applied to stacks, and no moving WISE 0855 source was confidently identified. The moving-source acceptance remains open.
+
+## B4: Detector-specific differences
+
+`diff` subtracts a median reference made from frames of the same detector, returns frames in MJD order, and appends `difference vs. detector median` to the flags text. `stretch_symmetric` maps zero to mid-gray with positive and negative residuals on opposite sides.
+
+The Role A route calls `to_png_b64` with `symmetric=(mode == "diff")`; the encoder check passed. An earlier live API verification returned 55 chronological differences, and contact sheets showed positive and negative residuals around mid-gray. Static-source residuals remain, and I could not identify a confident moving-object pair, so B4's visual acceptance check remains open.
+
+The fresh API and browser checks returned 58 chronological difference frames at 3 arcmin and 54 at 5 arcmin, respectively. The encoder regression check passed. Contact sheets still show static-source residuals and no confident positive/negative moving-object pair, so the real-data visual acceptance remains open.
+
+## B5: Wavelength normalization decision
+
+I did not add another normalization. The existing per-frame stretch already maps each frame's 5th–99.7th percentile range to the display range. Applying a positive linear rescale and offset before that stretch cancels out. I checked median/MAD normalization on 59 live WISE 0855 frames: it changed **0 of 241,664** rendered 8-bit pixels. The shared stretch comparison in B2 also changed contrast between frames. Keep the existing stretch; it is for visibility, not preserving photometric brightness across wavelengths.
+
+## B6: Spectrum extraction
+
+`extract_spectrum` reports the mean aperture brightness minus the median of a surrounding annulus, in MJy/sr. It propagates `variance` when the aperture and annulus variances are valid; otherwise it estimates the error from the annulus's robust scatter. For a canvas click at row `r`, pass array row `y = 63 - r`.
+
+Role A's merged code now provides `irsa.get_raw_frames` with selected-pixel wavelength sampling and wires `GET /api/spectrum`. The route converts a canvas row to array row `63 - y`, and the synthetic response explicitly labels itself fake.
+
+On 2026-11-14, I tested the live route around Barnard's Star's approximate field center (RA 269.452°, Dec 4.693°), at 10-arcmin FOV and candidate pixel x=34, canvas y=3. It returned HTTP 200 in 143.2 seconds with 19 wavelength-sorted points and finite flux/error values, from D1, D5, and D6. Coverage was 0.7501–4.9287 micron, but there were no points from about 0.78 to 3.82 micron.
+
+On a fresh run, the same live endpoint returned HTTP 200 in 82.7 seconds with 21 sorted points and finite flux/error values, from D1, D3, D5, and D6. Coverage was 0.7501–4.9287 micron, but large gaps remained (including 0.7801–2.4225 and 2.4225–3.8214 micron). The endpoint shape passes; the requested smooth, broad-coverage bright-star spectrum does not.
+
+The latest `scripts/verify_api.py` run returned 57 sorted, finite points at the WISE 0855 field center, across D1–D6, with a total range of 0.8169–4.9683 micron. It also reported many gaps larger than 0.1 micron. This verifies the live route shape and wavelength ordering, but it is not the bright-star test requested by B6 and does not demonstrate a smooth spectrum. Each point comes from a different observation date, so a moving object may no longer be at the clicked position.
+
+## B7: Motion and field-of-view check
+
+The SIMBAD Harvard mirror lists WISE 0855's proper-motion components as -8123.7 and +673.2 mas/yr, a total of **8.152 arcsec/yr**. Across the earlier 181.808-day SPHEREx span, that predicts about **4.06 arcsec** of motion: 1.44 pixels on the resampled 3-arcmin grid, but only 0.65 of a native SPHEREx pixel. A fresh live API run returned 58 frames from MJD 60800.701 to 61174.288 (373.587 days), corresponding to about **8.34 arcsec** or 2.96 resampled 3-arcmin pixels. I inspected current single, stack, and symmetric-diff contact sheets but still could not confidently identify WISE 0855 moving. This is a non-detection in the inspected samples, not evidence that the object did not move. [SIMBAD: WISEA J085510.74-071442.5](https://simbad.cfa.harvard.edu/simbad/sim-id?Ident=WISEA+J085510.74-071442.5); [IRSA verification notes](./irsa_notes.md)
+
+SIMBAD lists Barnard's Star's total proper motion as **10.393 arcsec/yr**. From the approximate J2000 target position to 2026-11-14, that is about **4.65 arcmin**. The current 2-arcmin field (1-arcmin half-width) will miss it; the 10-arcmin option (5-arcmin half-width) can just contain it, so an epoch-corrected coordinate and some margin are preferable. A live 10-arcmin field returned 53 frames over 11.618 days. The brightest median pixel in D2–D6 was at (33–34, 60–61), consistent within about a pixel with the SIMBAD-propagated position (33.7, 59.8). This supports the larger-field conclusion, but the short baseline is not a proper-motion measurement. [SIMBAD: Barnard's Star](https://simbad.cfa.harvard.edu/simbad/sim-id?Ident=Barnard%27s+Star)
+
+## Sources
+
+- [IRSA tutorial: Introduction to SPHEREx Spectral Images](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro)
+- [SPHEREx Explanatory Supplement, v2.1 (2026-11-10)](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/SPHEREx_Expsupp.pdf)
+- [SPHEREx Archive at IRSA: Data Products](https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-products)

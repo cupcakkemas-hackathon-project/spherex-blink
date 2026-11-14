@@ -5,7 +5,7 @@ Humans: you can read it too. It is the shared context for the whole project.
 
 ## 0. How to start a session
 
-1. Ask the person which role they are: **A (Data)**, **B (Image & science)**, **C (Frontend)** or **D (Product, deploy & presentation)**.
+1. Ask the person which role they are: **A (Data)**, **B (Image & science)**, **C (Frontend)** or **D (Product & presentation)**.
 2. Read the official brief in `docs/CHALLENGE.md` and what judges look for in `docs/JUDGING.md`, then the matching file in `docs/roles/` (`A-data.md`, `B-image-science.md`, `C-frontend.md`, `D-product-deploy.md`).
    Judging criteria in `docs/JUDGING.md` are not yet verified against the 2026 guide; do not state them as fact until role D has confirmed them.
 3. Work through that person's tasks **in order**. Each task has "Done when" checks. Do not skip them.
@@ -41,9 +41,14 @@ Judging is by the Space Apps criteria (impact, creativity, validity, relevance, 
 | A, Data | `backend/irsa.py`, `backend/irsa_check.py`, `backend/app.py`, `scripts/`, `docs/irsa_notes.md` | `docs/roles/A-data.md` |
 | B, Image & science | `backend/imaging.py`, `backend/spectrum.py` (new), `docs/science_notes.md` | `docs/roles/B-image-science.md` |
 | C, Frontend | `frontend/` | `docs/roles/C-frontend.md` |
-| D, Product & deploy | `README.md`, `docs/` (except notes owned above), `tests/`, deployment files, `.gitignore`, video & submission | `docs/roles/D-product-deploy.md` |
+| D, Product & presentation | `README.md`, `docs/` (except notes owned above), `tests/`, `.gitignore`, video & submission | `docs/roles/D-product-deploy.md` |
 
 `backend/demo.py` (synthetic data) is shared; change it only to keep it matching the real response shape.
+
+**Temporary handoff (from 14 Nov, Dhiya low on agent credits):** Ian (role B) may also edit
+backend/irsa.py, backend/app.py, backend/irsa_check.py and scripts/ (the files normally owned by Dhiya, role A).
+Dhiya will not edit these files until she announces in the team chat that she is taking them back.
+Ian: keep changes small, run `python scripts/verify_api.py` against a fresh server before merging, and tell the team in the chat when you change these files.
 
 ## 4. Facts about the data (from IRSA documentation; verify when you can)
 
@@ -97,7 +102,6 @@ RA/Dec = sky longitude/latitude. Cutout = small square cropped from a big image.
 7. Brightness of a star changes from frame to frame mostly because the **observed wavelength** changes, not because the star varies. Do not stack or difference across different detectors without thinking about this.
 8. Output frames are 64x64 px on a common grid, but a 2 arcmin field is only about 19 native pixels wide. Frames are upsampled and smooth.
 9. The API sends **PNG images**, so raw flux values are lost. Anything needing real numbers (spectra) must use the raw arrays on the server (see role A task A5, role B task B6).
-10. Free hosting may sleep or block outbound connections. Test that the deployed server can reach `irsa.ipac.caltech.edu`.
 
 ## 6. API contract (current)
 
@@ -129,7 +133,7 @@ non-finite. Errors: 400 bad input, 404 no images, 502 IRSA failure; body
 Planned additions (additive):
 - `size_px` (64) and `pixel_scale_arcsec` in the `/api/frames` response (role A, task A9)
 - `GET /api/spectrum?ra=&dec=&fov=&x=&y=` returns `{"points":[{"wavelength":..,"flux":..,"err":..,"mjd":..,"detector":..}]}` (role B writes `backend/spectrum.py`, role A wires the route)
-- `GET /healthz` returns `{"ok": true}` (role A, for deployment)
+- `GET /healthz` returns `{"ok": true}` (role A, for local diagnostics)
 
 Pixel geometry (for click-to-coordinates): grid is 64x64, centre at canvas pixel (31.5, 31.5), scale = `fov_arcmin*60/64` arcsec per pixel, north up, east left. `ra = ra0 - (x-31.5)*scale_deg/cos(dec0)`, `dec = dec0 + (31.5-y)*scale_deg`, where `scale_deg = fov_arcmin/60/64`.
 
@@ -145,7 +149,7 @@ Quick API check without internet: `curl "http://127.0.0.1:8000/api/frames?ra=133
 ## 8. Definition of done for the project
 
 - Real SPHEREx frames shown for all five test targets, aligned (stars do not jump), in time order.
-- Works from a public link; example buttons; URL parameters work.
+- Works locally with real data; example buttons and URL parameters work.
 - At least: stack-by-detector or difference mode that visibly helps on real data.
 - Honest limitations listed in the README. No fake data in the demo.
 - README, 2-minute demo video, and submission text finished before hour 46.

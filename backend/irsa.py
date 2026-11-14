@@ -18,6 +18,7 @@ from astropy import log as astropy_log
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
+from astropy.table import vstack
 from astropy.wcs import WCS
 from reproject import reproject_interp
 
@@ -32,6 +33,7 @@ OUT_PIX = 64
 PIX_SCALE_ARCSEC = 6.2  # SPHEREx native pixel size
 _RAW_CACHE: dict[tuple, tuple[float, list[dict]]] = {}
 _RAW_CACHE_LOCK = threading.Lock()
+_FLAG_REPROJECT_LOCK = threading.Lock()
 _WCS_WARNING_COUNTS = {"reproject": 0, "wavelength": 0}
 _WCS_WARNING_LOCK = threading.Lock()
 LOGGER = logging.getLogger(__name__)
@@ -85,8 +87,44 @@ def query_images(ra: float, dec: float, fov_arcmin: float):
 
     coord = SkyCoord(ra * u.deg, dec * u.deg)
     collections = [name.strip() for name in COLLECTION.split(",") if name.strip()]
-    tbl = Irsa.query_sia(pos=(coord, 30 * u.arcsec), collection=collections)
-    return tbl
+    if not collections:
+        raise IRSAUnavailableError("No SPHEREx collections are configured")
+
+    tables = []
+    failures = []
+    for collection in collections:
+        try:
+            table = Irsa.query_sia(
+                pos=(coord, 30 * u.arcsec), collection=[collection]
+            )
+            if len(table) == 0:
+                failures.append(f"{collection}: no rows returned")
+                LOGGER.warning(
+                    "SPHEREx collection %s returned no rows", collection
+                )
+                continue
+            tables.append(table)
+        except Exception as error:
+            failures.append(f"{collection}: {error}")
+            LOGGER.warning(
+                "SPHEREx collection %s failed: %s", collection, error
+            )
+
+    if not tables:
+        details = "; ".join(failures) or "no rows returned"
+        raise IRSAUnavailableError(
+            f"All configured SPHEREx collections failed ({details})"
+        )
+
+    merged = vstack(tables, metadata_conflicts="silent")
+    seen_urls = set()
+    keep = []
+    for index, row in enumerate(merged):
+        url = str(row["access_url"])
+        if url not in seen_urls:
+            seen_urls.add(url)
+            keep.append(index)
+    return merged[keep]
 
 
 def _row_url(row, ra, dec, size_deg) -> str:
@@ -208,29 +246,64 @@ def _target_wavelength(hdul, ra: float, dec: float, image_hdu) -> float:
     return _wavelength_at_coord(hdul, SkyCoord(ra * u.deg, dec * u.deg), image_hdu)
 
 
+def _reproject_flag_mask(flags_hdu, image_wcs, target_wcs) -> np.ndarray:
+    """Reproject FLAGS without blending bit values."""
+    source = np.asarray(flags_hdu.data)
+    source_values = np.unique(source)
+    fill_value = source_values[0]
+    with _FLAG_REPROJECT_LOCK:
+        projected = reproject_interp(
+            (source.astype(float, copy=False), image_wcs),
+            target_wcs,
+            shape_out=(OUT_PIX, OUT_PIX),
+            order="nearest-neighbor",
+            return_footprint=False,
+        )
+    projected = np.asarray(projected)
+    projected[~np.isfinite(projected)] = fill_value
+    projected = np.rint(projected).astype(np.int64)
+    unexpected = ~np.isin(projected, source_values)
+    if np.any(unexpected):
+        # Keep the mask categorical even if the reprojection backend returns
+        # a rounded value not present in the source due to WCS edge effects.
+        distances = np.abs(
+            projected[unexpected, None] - source_values[None, :]
+        )
+        projected[unexpected] = source_values[np.argmin(distances, axis=1)]
+    return projected
+
+
 def load_frame(row, ra, dec, size_deg, target_wcs, sample_pixel=None):
     url = _row_url(row, ra, dec, size_deg)
     with fits.open(io.BytesIO(_fetch(url))) as hdul:
         img_hdu = hdul["IMAGE"]
         flags_hdu = hdul["FLAGS"] if "FLAGS" in hdul else None
-        variance_hdu = hdul["VARIANCE"]
+        variance_hdu = hdul["VARIANCE"] if "VARIANCE" in hdul else None
         image_wcs = WCS(img_hdu.header)
 
         def reproject():
-            return (
-                reproject_interp(
-                    (img_hdu.data, image_wcs),
-                    target_wcs,
-                    shape_out=(OUT_PIX, OUT_PIX),
-                )[0],
-                reproject_interp(
+            data = reproject_interp(
+                (img_hdu.data, image_wcs),
+                target_wcs,
+                shape_out=(OUT_PIX, OUT_PIX),
+            )[0]
+            variance = None
+            if variance_hdu is not None:
+                # Interpolating variance like intensity is approximate and is
+                # suitable only for relative weights, not calibrated errors.
+                variance = reproject_interp(
                     (variance_hdu.data, image_wcs),
                     target_wcs,
                     shape_out=(OUT_PIX, OUT_PIX),
-                )[0],
-            )
+                )[0]
+            return data, variance
 
         data, variance = _count_wcs_warnings("reproject", reproject)
+        flag_mask = (
+            _reproject_flag_mask(flags_hdu, image_wcs, target_wcs)
+            if flags_hdu is not None
+            else np.zeros((OUT_PIX, OUT_PIX), dtype=np.int64)
+        )
         hdr = img_hdu.header
         detector = int(hdr.get("DETECTOR", 0))
         expected_detector = _row_detector(row)
@@ -246,6 +319,8 @@ def load_frame(row, ra, dec, size_deg, target_wcs, sample_pixel=None):
         return {
             "data": data,
             "variance": variance,
+            "variance_approx": True,
+            "flag_mask": flag_mask,
             "mjd": float(hdr.get("MJD-AVG", _row_mjd(row))),
             "detector": detector,
             "wavelength": _wavelength_at_coord(hdul, sample_coord, img_hdu),

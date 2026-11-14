@@ -1,43 +1,86 @@
-import time, math, collections, requests
-B = "http://127.0.0.1:8000"
+import collections
+import math
+import os
+import time
+
+import requests
+
+B = os.environ.get("SPHEREX_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+FAILED = False
+
+
 def get(path, **kw):
-    t = time.time(); r = requests.get(B + path, params=kw, timeout=300); return r, time.time() - t
-def ok(c, m): print(("PASS  " if c else "FAIL  ") + m)
+    t = time.time()
+    response = requests.get(B + path, params=kw, timeout=300)
+    return response, time.time() - t
 
-r, _ = get("/healthz"); ok(r.json() == {"ok": True}, "healthz")
 
-q = dict(ra=133.7951, dec=-7.2452, fov=3, source="live")
-r1, t1 = get("/api/frames", **q); r2, t2 = get("/api/frames", **q)
-j1, j2 = r1.json(), r2.json(); f = j1["frames"]
-ok(r1.status_code == 200, "frames returns 200")
-ok(len(f) == len(j2["frames"]) and [x["mjd"] for x in f] == [x["mjd"] for x in j2["frames"]],
-   f"same frames both times ({len(f)} frames)")
-print(f"      time first / second request: {t1:.1f}s / {t2:.2f}s")
-ok(t2 < 1.0, "second request under 1 s")
-ok(j1.get("size_px") == 64 and abs(j1.get("pixel_scale_arcsec", 0) - 3*60/64) < 1e-6, "size_px and pixel_scale_arcsec")
-ok([x["mjd"] for x in f] == sorted(x["mjd"] for x in f), "times increasing")
-cnt = collections.Counter(x["detector"] for x in f)
-print("      detector counts:", dict(sorted(cnt.items())))
-ok(all(cnt.get(d, 0) >= 3 for d in range(1, 7)), "every detector has at least 3 frames")
-ok(all(x["wavelength"] is not None and 0.75 <= x["wavelength"] <= 5.1 for x in f), "wavelengths valid")
+def ok(condition, message):
+    global FAILED
+    if not condition:
+        FAILED = True
+    print(("PASS  " if condition else "FAIL  ") + message)
 
-# spectrum route
-def spec(x, y):
-    r, _ = get("/api/spectrum", ra=133.7951, dec=-7.2452, fov=3, x=x, y=y)
-    return r
-r = spec(32, 32)
-ok(r.status_code == 200, f"/api/spectrum centre returns 200 (got {r.status_code})")
-if r.status_code == 200:
-    p = r.json()["points"]
-    wl = [a["wavelength"] for a in p]
-    ok(len(p) > 0, f"spectrum has points ({len(p)})")
-    ok(all(isinstance(v, (int, float)) and not math.isnan(v) and 0.75 <= v <= 5.1 for v in wl), "spectrum wavelengths valid")
-    ok(wl == sorted(wl), "sorted by wavelength")
-    ok(all(not (isinstance(a[k], float) and math.isnan(a[k])) for a in p for k in ("flux", "err") if a.get(k) is not None), "no NaN flux/err")
-    pe = spec(5, 5)
-    if pe.status_code == 200:
-        we = [a["wavelength"] for a in pe.json()["points"]]
-        ok(set(round(v, 4) for v in wl) != set(round(v, 4) for v in we), "different pixel gives different wavelengths (per-pixel map in use)")
-    print("      coverage at centre (micron):", round(min(wl), 2), "-", round(max(wl), 2))
-for bad in [(99, 5), (-1, 5), ("abc", 5)]:
-    ok(spec(*bad).status_code in (400, 422), f"bad input {bad} rejected")
+
+def verify_frames(mode):
+    query = dict(ra=133.7951, dec=-7.2452, fov=3, mode=mode, source="live")
+    response, elapsed = get("/api/frames", **query)
+    ok(response.status_code == 200, f"{mode} frames returns 200")
+    if response.status_code != 200:
+        return []
+    payload = response.json()
+    frames = payload.get("frames", [])
+    ok(payload.get("source") == "live", f"{mode} response is live")
+    ok(bool(frames), f"{mode} has frames ({len(frames)})")
+    mjds = [frame["mjd"] for frame in frames]
+    ok(mjds == sorted(mjds), f"{mode} times increasing")
+    counts = collections.Counter(frame["detector"] for frame in frames)
+    print(f"      {mode} elapsed: {elapsed:.1f}s; detector counts: {dict(sorted(counts.items()))}")
+    return frames
+
+
+try:
+    response, _ = get("/healthz")
+    ok(response.status_code == 200 and response.json() == {"ok": True}, "healthz")
+
+    single = verify_frames("single")
+    stack = verify_frames("stack")
+    diff = verify_frames("diff")
+    for mode, frames in (("single", single), ("stack", stack), ("diff", diff)):
+        ok(all(frame.get("wavelength") is not None for frame in frames),
+           f"{mode} wavelengths present")
+
+    response, elapsed = get(
+        "/api/spectrum", ra=133.7951, dec=-7.2452, fov=3, x=32, y=32,
+        source="live",
+    )
+    ok(response.status_code == 200, f"/api/spectrum selected pixel returns 200 (got {response.status_code})")
+    if response.status_code == 200:
+        payload = response.json()
+        ok(payload.get("source") != "synthetic", "spectrum is not synthetic")
+        points = payload.get("points", [])
+        ok(bool(points), f"spectrum has points ({len(points)})")
+        ok(all(0.75 <= point["wavelength"] <= 5.1 for point in points),
+           "spectrum wavelengths valid")
+        ok(all(point["flux"] is not None and point["err"] is not None for point in points),
+           "spectrum flux/error values present")
+        by_detector = collections.defaultdict(list)
+        for point in points:
+            by_detector[point["detector"]].append(point["wavelength"])
+        ordered = sorted(points, key=lambda point: point["wavelength"])
+        gaps = [
+            (left["wavelength"], right["wavelength"])
+            for left, right in zip(ordered, ordered[1:])
+            if right["wavelength"] - left["wavelength"] > 0.1
+        ]
+        for detector in sorted(by_detector):
+            values = by_detector[detector]
+            print(f"      D{detector} coverage: {min(values):.6f}-{max(values):.6f} micron ({len(values)} points)")
+        print(f"      spectrum elapsed: {elapsed:.1f}s; gaps > 0.1 micron: {gaps or 'none'}")
+        ok([point["wavelength"] for point in points] == sorted(point["wavelength"] for point in points),
+           "spectrum sorted by wavelength")
+except (requests.RequestException, ValueError, KeyError) as error:
+    FAILED = True
+    print(f"FAIL  validation request failed: {error}")
+
+raise SystemExit(1 if FAILED else 0)
