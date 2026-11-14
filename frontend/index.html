@@ -121,7 +121,7 @@ function draw() {
   $('f_n').textContent = `${idx + 1} / ${frames.length}`;
   $('f_t').textContent = f.mjd.toFixed(2);
   $('f_d').textContent = f.detector || '–';
-  $('f_w').textContent = isFinite(f.wavelength) ? f.wavelength.toFixed(2) + ' µm' : 'not available yet';
+  $('f_w').textContent = Number.isFinite(f.wavelength) ? f.wavelength.toFixed(2) + ' µm' : 'not available yet';
   $('f_f').textContent = f.flags;
   $('f_p').textContent = `RA ${meta.ra.toFixed(4)}°, Dec ${meta.dec.toFixed(4)}°, ${meta.fov_arcmin}′ wide`;
   $('scrub').value = idx;
