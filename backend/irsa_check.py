@@ -9,10 +9,26 @@ tbl = irsa.query_images(RA, DEC, 2.0)
 print("images found:", len(tbl))
 print("columns:", tbl.colnames)
 print(tbl[:3])
-frames = irsa.make_frames(RA, DEC, 5.0)
+irsa.reset_wcs_warning_counts()
+frames = irsa.get_raw_frames(RA, DEC, 5.0)
 print("frames built:", len(frames))
+warning_counts = irsa.get_wcs_warning_counts()
+print(
+    "WCS convergence warnings:",
+    f"reproject={warning_counts['reproject']}, "
+    f"wavelength={warning_counts['wavelength']}, "
+    f"total={sum(warning_counts.values())}",
+)
 if frames:
     print({k: v for k, v in frames[0].items() if k != "data"})
+    if not all(
+        frame["data"].shape == frame["variance"].shape
+        and frame["data"].shape == (irsa.OUT_PIX, irsa.OUT_PIX)
+        and isinstance(frame["detector"], int)
+        for frame in frames
+    ):
+        raise RuntimeError("a frame is missing a valid data/variance shape or detector")
+    print("raw frame fields: data, variance, wavelength, detector, flags")
     wavelengths = [frame["wavelength"] for frame in frames]
     if not all(
         isinstance(value, float) and 0.75 <= value <= 5.1

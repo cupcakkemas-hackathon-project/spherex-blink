@@ -61,7 +61,7 @@ def frames(ra: str, dec: str, fov: float = 2.0, mode: str = "single", source: st
     else:
         try:
             from backend import irsa
-            raw = irsa.make_frames(ra_d, dec_d, fov)
+            raw = irsa.get_raw_frames(ra_d, dec_d, fov)
         except Exception as e:
             raise HTTPException(502, f"Live SPHEREx query failed: {e}")
         if not raw:
