@@ -114,13 +114,17 @@ Response:
 {
   "source": "live",
   "ra": 133.7951, "dec": -7.2452, "fov_arcmin": 2.0, "mode": "single",
+  "size_px": 64, "pixel_scale_arcsec": 1.875,
   "frames": [
     {"png": "<base64 PNG, 64x64, north up, east left>",
      "mjd": 61000.5, "wavelength": 1.23, "detector": 2, "flags": "text"}
   ]
 }
 ```
-`wavelength` is micron, or NaN when unknown. Errors: 400 bad input, 404 no images, 502 IRSA failure; body `{"detail": "..."}`.
+`size_px` is the output image size, and `pixel_scale_arcsec` is
+`fov_arcmin*60/size_px`. `wavelength` is micron, or `null` when unknown or
+non-finite. Errors: 400 bad input, 404 no images, 502 IRSA failure; body
+`{"detail": "..."}`. `GET /healthz` returns `{"ok": true}`.
 
 Planned additions (additive):
 - `size_px` (64) and `pixel_scale_arcsec` in the `/api/frames` response (role A, task A9)

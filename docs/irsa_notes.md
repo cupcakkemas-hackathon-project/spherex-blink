@@ -200,6 +200,13 @@ center/neighbor wavelengths of `2.364938`, `2.364908`, `2.364483`, `2.364968`,
 and `2.365393` micron, confirming a smooth local wavelength field rather than
 a lookup failure.
 
+## A9 API additions
+
+`GET /api/frames` includes `size_px` (`64`) and
+`pixel_scale_arcsec` (`fov_arcmin*60/size_px`). Wavelengths are finite JSON
+numbers when known and `null` when unknown or non-finite. `GET /healthz`
+returns `{"ok": true}` without contacting IRSA.
+
 ## AI disclosure record
 
 This verification note and the related code changes were prepared with
