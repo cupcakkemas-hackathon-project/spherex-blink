@@ -50,7 +50,28 @@ Judging is by the Space Apps criteria (impact, creativity, validity, relevance, 
 - SPHEREx data lives at **IRSA** (NASA/IPAC Infrared Science Archive). Main product: **Level 2 Spectral Image multi-extension FITS files (MEF)**, about 72 MB each. **Never download a full file.** Use cutouts.
 - Find images covering a position: SIA2 service `https://irsa.ipac.caltech.edu/SIA` with a `COLLECTION` parameter (documented: `spherex_qr2` wide survey, `spherex_qr2_deep`, `spherex_qr2_cal`; a third-party page also mentions `spherex_qr3`, unconfirmed). Or TAP at `https://irsa.ipac.caltech.edu/TAP`. In Python: `astroquery.ipac.irsa.Irsa.query_sia(pos=(coord, radius), collection=...)` or `pyvo`.
 - Cutouts: append a query string to the image URL, e.g. `<image_url>?center=<ra>,<dec>d&size=<deg>` (size in degrees). Result keeps the same extensions: `IMAGE`, `FLAGS`, `VARIANCE`, `ZODI`, `PSF`, `WCS-WAVE`. `IMAGE` is in MJy/sr.
-- Pixels are about 6.2 arcsec. Six detector arrays (D1-D6): three short-wavelength, three long-wavelength. Each has a linear variable filter, so **the wavelength changes across the detector** and the wavelength seen at a given sky position changes from image to image. Total range 0.75-5.1 micron. D1 is about 0.75-1.09 micron and D2 about 1.10-1.62 micron (from the SPXQuery package); the others are to be verified.
+- Pixels are about 6.2 arcsec. Six detector arrays (D1-D6): three short-wavelength, three long-wavelength. Each has a linear variable filter, so **the wavelength changes across the detector** and the wavelength seen at a given sky position changes from image to image. Total range 0.75-5.1 micron. 
+Measured target-position wavelength ranges from that run:
+
+| Detector | Minimum (micron) | Maximum (micron) | Frames |
+|---|---:|---:|---:|
+| D1 | 0.783449 | 1.114556 | 18 |
+| D2 | 1.280405 | 1.629437 | 8 |
+| D3 | 2.209355 | 2.413861 | 3 |
+| D4 | 2.436878 | 3.830132 | 19 |
+| D5 | 4.039577 | 4.407620 | 7 |
+| D6 | 4.860919 | 5.004498 | 3 |
+
+The detector ordering is consistent across the sampled frames and follows the
+six SPHEREx bands from short to long wavelength. The observed edges can extend
+slightly beyond the rounded tutorial labels (for example D1 reaches 1.114556
+and D4 reaches 3.830132 micron), so these measured ranges should be used for
+the current dataset rather than treating the rounded labels as hard limits.
+
+The cutout `size` parameter is in degrees. The tested `0.05` degree request
+returned a 29 by 29 pixel cutout. The IRSA cutout service is not assumed to
+have a fixed minimum here; callers should use a positive degree value suited
+to the requested field of view.
 - New images are released **weekly**; the SIA/ObsTAP search can lag slightly behind. A live query therefore picks up new data automatically.
 - Official docs and tutorials (read these before guessing):
   - https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-access

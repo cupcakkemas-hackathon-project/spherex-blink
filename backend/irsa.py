@@ -59,6 +59,21 @@ def _row_mjd(row) -> float:
     return float(row["t_min"])
 
 
+def _target_wavelength(hdul, ra: float, dec: float, image_hdu) -> float:
+    """Return the WCS-WAVE wavelength at the target position, in microns."""
+    spatial_wcs = WCS(image_hdu.header)
+    target = SkyCoord(ra * u.deg, dec * u.deg)
+    x, y = spatial_wcs.world_to_pixel(target)
+
+    spectral_wcs = WCS(header=image_hdu.header, fobj=hdul, key="W")
+    spectral_wcs.sip = None
+    wavelength, _ = spectral_wcs.pixel_to_world(x, y)
+    value = float(wavelength.to_value(u.um))
+    if not np.isfinite(value) or not 0.75 <= value <= 5.1:
+        raise ValueError(f"target wavelength is outside SPHEREx range: {value}")
+    return value
+
+
 def load_frame(row, ra, dec, size_deg, target_wcs):
     url = _row_url(row, ra, dec, size_deg)
     with fits.open(io.BytesIO(_fetch(url))) as hdul:
@@ -73,7 +88,7 @@ def load_frame(row, ra, dec, size_deg, target_wcs):
             "data": data,
             "mjd": float(hdr.get("MJD-AVG", _row_mjd(row))),
             "detector": int(hdr.get("DETECTOR", 0)),
-            "wavelength": float("nan"),                          # TODO: from WCS-WAVE extension
+            "wavelength": _target_wavelength(hdul, ra, dec, img_hdu),
             "flags": f"{flagged} flagged px in cutout",
         }
 
