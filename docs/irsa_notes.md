@@ -103,7 +103,47 @@ MJD-AVG = 60800.70069465
 
 Therefore `MJD-AVG` and `DETECTOR` are verified header keys for a cutout.
 `WCS-WAVE` is a binary-table spectral WCS extension; its wavelength lookup
-will be handled by the wavelength task.
+has one row and three columns:
+
+```text
+columns: X (9J), Y (14J), VALUES (252E)
+```
+
+`X` and `Y` are the lookup-grid pixel coordinates. `VALUES` contains a
+two-element wavelength/bandwidth pair at each lookup-grid point, in microns.
+The `IMAGE` header contains the alternate spectral WCS keys
+`CTYPE1W= WAVE-TAB`, `CTYPE2W= WAVE-TAB`, `CUNIT1W= um`, and
+`CUNIT2W= um`. Following the IRSA tutorial, the code constructs
+`WCS(header=image_header, fobj=hdul, key="W")`, disables SIP distortion for
+that spectral WCS, converts the target pixel with `pixel_to_world`, and uses
+the wavelength component.
+
+The probe used a real WISE 0855 cutout at `RA=133.7951`, `Dec=-7.2452`,
+`size=0.08333333333333333` degrees. It returned a 49 by 49 `IMAGE` and
+resolved the target pixel to approximately `(24.2154, 23.7705)` with a
+wavelength of `2.3649379` micron and bandwidth `0.0586735` micron.
+
+The updated `python -m backend.irsa_check` run on 2026-11-14 built 58 frames
+from 258 SIA rows. The checker validated that all 58 wavelengths were finite
+and within 0.75-5.1 micron; all 58 values were distinct. Some cutouts
+returned HTTP 503 and were skipped, as documented above.
+
+Measured target-position wavelength ranges from that run:
+
+| Detector | Minimum (micron) | Maximum (micron) | Frames |
+|---|---:|---:|---:|
+| D1 | 0.783449 | 1.114556 | 18 |
+| D2 | 1.280405 | 1.629437 | 8 |
+| D3 | 2.209355 | 2.413861 | 3 |
+| D4 | 2.436878 | 3.830132 | 19 |
+| D5 | 4.039577 | 4.407620 | 7 |
+| D6 | 4.860919 | 5.004498 | 3 |
+
+The detector ordering is consistent across the sampled frames and follows the
+six SPHEREx bands from short to long wavelength. The observed edges can extend
+slightly beyond the rounded tutorial labels (for example D1 reaches 1.114556
+and D4 reaches 3.830132 micron), so these measured ranges should be used for
+the current dataset rather than treating the rounded labels as hard limits.
 
 The cutout `size` parameter is in degrees. The tested `0.05` degree request
 returned a 29 by 29 pixel cutout. The IRSA cutout service is not assumed to
