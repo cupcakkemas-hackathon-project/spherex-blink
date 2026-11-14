@@ -157,6 +157,80 @@ automatically. IRSA documents that ingestion is weekly and SIA2 availability
 can lag ingestion by about a day. The app's in-memory cache should therefore
 have a finite TTL when it is added; a process restart also clears it.
 
+## A5 raw-frame cache and variance verification
+
+`backend.irsa.get_raw_frames(ra, dec, fov)` now returns the reprojected raw
+frame dictionaries before PNG encoding. Each live frame includes `data`,
+`variance`, `mjd`, `wavelength`, `detector`, and `flags`. The `VARIANCE`
+extension is reprojected onto the same 64 by 64 output grid as `IMAGE`.
+Results are cached in memory by rounded `(ra, dec, fov)` for four hours by
+default; `RAW_CACHE_TTL_SECONDS` can override that value.
+
+On 2026-11-14, `python -m backend.irsa_check` built 59 live frames. It
+validated matching 64 by 64 `data` and `variance` shapes, 59 finite
+wavelengths, and 59 distinct wavelength values. The same-process cache timing
+for WISE 0855 at five arcminutes was:
+
+```text
+first request: 7.959s (59 frames)
+second request: 0.000012s (59 frames)
+```
+
+`from backend.irsa import get_raw_frames` imported successfully.
+
+Using a clean Uvicorn process on port 8765, two identical live
+`/api/frames?ra=133.7951&dec=-7.2452&fov=5&source=live` requests took 9.415
+seconds and 0.029 seconds respectively, with 59 frames returned both times.
+
+## WCS warning check
+
+The repeated SIP/`CTYPE` text came from Astropy's WCS logger at INFO level;
+the pipeline now sets that logger to WARNING, leaving higher-severity messages
+visible. The checker counts `WCS.all_world2pix` convergence warnings separately
+for the image/variance reprojection and target wavelength lookup. The verified
+2026-11-14 run reported:
+
+```text
+WCS convergence warnings: reproject=0, wavelength=0, total=0
+```
+
+Thus no affected frames required an alignment comparison in that run. A real
+cutout neighbor check at the target pixel `(24.2154, 23.7705)` returned
+center/neighbor wavelengths of `2.364938`, `2.364908`, `2.364483`, `2.364968`,
+and `2.365393` micron, confirming a smooth local wavelength field rather than
+a lookup failure.
+
+## A9 API additions
+
+`GET /api/frames` includes `size_px` (`64`) and
+`pixel_scale_arcsec` (`fov_arcmin*60/size_px`). Wavelengths are finite JSON
+numbers when known and `null` when unknown or non-finite. `GET /healthz`
+returns `{"ok": true}` without contacting IRSA.
+
+## A6 frame selection and download behavior
+
+SIA rows are grouped by detector using the verified detector segment in
+`access_url` (for example `_1D3_` means detector D3), before any cutout is
+downloaded. Each detector receives an initial fair share of
+`floor(MAX_FRAMES / 6)` frames, with remaining capacity distributed in stable
+detector-number order. Within each detector, rows are sorted by MJD and sampled
+evenly from the complete time range. URL order breaks time ties, so repeated
+requests select the same rows.
+
+The detector number read from the URL is checked against the `DETECTOR` header
+in every downloaded cutout. A mismatch causes that frame to be skipped rather
+than allowing unverified metadata into the response.
+
+Cutouts use four workers and a 30-second timeout by default
+(`IRSA_TIMEOUT_SECONDS` can override it). HTTP 503 responses and timeouts are
+retried up to three total attempts with increasing short waits; other errors
+are not retried. Successful responses are written to `.cache/` only after the
+download completes. Failed frames are skipped and the count is logged.
+
+Start the API, then run `python scripts/warm_cache.py` to request all five
+built-in targets at a 3 arcminute field of view. The script reads `TARGETS`
+from `backend.app`, so coordinate corrections are picked up automatically.
+
 ## AI disclosure record
 
 This verification note and the related code changes were prepared with
