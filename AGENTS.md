@@ -45,6 +45,11 @@ Judging is by the Space Apps criteria (impact, creativity, validity, relevance, 
 
 `backend/demo.py` (synthetic data) is shared; change it only to keep it matching the real response shape.
 
+**Temporary handoff (from 14 Nov, Dhiya low on agent credits):** Ian (role B) may also edit
+backend/irsa.py, backend/app.py, backend/irsa_check.py and scripts/ (the files normally owned by Dhiya, role A).
+Dhiya will not edit these files until she announces in the team chat that she is taking them back.
+Ian: keep changes small, run `python scripts/verify_api.py` against a fresh server before merging, and tell the team in the chat when you change these files.
+
 ## 4. Facts about the data (from IRSA documentation; verify when you can)
 
 - SPHEREx data lives at **IRSA** (NASA/IPAC Infrared Science Archive). Main product: **Level 2 Spectral Image multi-extension FITS files (MEF)**, about 72 MB each. **Never download a full file.** Use cutouts.
