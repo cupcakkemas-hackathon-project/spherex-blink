@@ -1,6 +1,7 @@
 """FastAPI app. Run from the project root:  uvicorn backend.app:app --reload"""
 import os
 import re
+import math
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -71,7 +72,8 @@ def frames(ra: str, dec: str, fov: float = 2.0, mode: str = "single", source: st
         "source": source,
         "ra": ra_d, "dec": dec_d, "fov_arcmin": fov, "mode": mode,
         "frames": [
-            {"png": to_png_b64(f["data"]), "mjd": f["mjd"], "wavelength": f["wavelength"],
+            {"png": to_png_b64(f["data"]), "mjd": f["mjd"],
+             "wavelength": f["wavelength"] if math.isfinite(f["wavelength"]) else None,
              "detector": f["detector"], "flags": f["flags"]}
             for f in out
         ],

@@ -1,9 +1,7 @@
 """Live pipeline: IRSA SIA2 query -> cutouts -> common-grid reprojection.
 
-STATUS: written from IRSA's public tutorials but NOT yet run against the live
-archive (the build environment could not reach irsa.ipac.caltech.edu). Run
-`python -m backend.irsa_check` on your own machine first and fix any column
-names that differ. Places that need verification are marked  # VERIFY.
+STATUS: verified against the live IRSA SIA2 service on 2026-11-14.
+See docs/irsa_notes.md for the observed columns and FITS structure.
 """
 import concurrent.futures as cf
 import hashlib
@@ -17,7 +15,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from reproject import reproject_interp
 
-COLLECTION = os.environ.get("SPHEREX_COLLECTION", "spherex_qr2")  # wide survey
+COLLECTION = os.environ.get("SPHEREX_COLLECTION", "spherex_dr1,spherex_qr3")
 CACHE_DIR = os.environ.get("CACHE_DIR", ".cache")
 MAX_FRAMES = int(os.environ.get("MAX_FRAMES", "60"))
 OUT_PIX = 64
@@ -46,17 +44,19 @@ def query_images(ra: float, dec: float, fov_arcmin: float):
     from astroquery.ipac.irsa import Irsa
 
     coord = SkyCoord(ra * u.deg, dec * u.deg)
-    tbl = Irsa.query_sia(pos=(coord, 30 * u.arcsec), collection=COLLECTION)
+    collections = [name.strip() for name in COLLECTION.split(",") if name.strip()]
+    tbl = Irsa.query_sia(pos=(coord, 30 * u.arcsec), collection=collections)
     return tbl
 
 
 def _row_url(row, ra, dec, size_deg) -> str:
-    base = str(row["access_url"])  # VERIFY column name (tutorial TAP path uses 'uri')
-    return f"{base}?center={ra},{dec}d&size={size_deg}"
+    base = str(row["access_url"])
+    separator = "&" if "?" in base else "?"
+    return f"{base}{separator}center={ra},{dec}d&size={size_deg}"
 
 
 def _row_mjd(row) -> float:
-    return float(row["t_min"])  # VERIFY: SIA2 ObsCore t_min is MJD
+    return float(row["t_min"])
 
 
 def load_frame(row, ra, dec, size_deg, target_wcs):
@@ -71,8 +71,8 @@ def load_frame(row, ra, dec, size_deg, target_wcs):
         flagged = int(np.count_nonzero(flags_hdu.data)) if flags_hdu is not None else 0
         return {
             "data": data,
-            "mjd": float(hdr.get("MJD-AVG", _row_mjd(row))),  # VERIFY header key
-            "detector": int(hdr.get("DETECTOR", 0)),           # VERIFY header key
+            "mjd": float(hdr.get("MJD-AVG", _row_mjd(row))),
+            "detector": int(hdr.get("DETECTOR", 0)),
             "wavelength": float("nan"),                          # TODO: from WCS-WAVE extension
             "flags": f"{flagged} flagged px in cutout",
         }
