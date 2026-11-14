@@ -89,6 +89,12 @@ The current Role A route still calls `to_png_b64` without `symmetric=True`. Ask 
 
 I did not add another normalization. The existing per-frame stretch already maps each frame's 5th–99.7th percentile range to the display range. Applying a positive linear rescale and offset before that stretch cancels out. I checked median/MAD normalization on 59 live WISE 0855 frames: it changed **0 of 241,664** rendered 8-bit pixels. The shared stretch comparison in B2 also changed contrast between frames. Keep the existing stretch; it is for visibility, not preserving photometric brightness across wavelengths.
 
+## B6: Spectrum extraction
+
+`extract_spectrum` reports the mean aperture brightness minus the median of a surrounding annulus, in MJy/sr. It propagates `variance` when the aperture and annulus variances are valid; otherwise it estimates the error from the annulus's robust scatter. For a canvas click at row `r`, pass array row `y = 63 - r`.
+
+This is not yet a complete API feature: `irsa.get_raw_frames` and `/api/spectrum` are not present, and the current loader's wavelength is evaluated at the query center rather than an arbitrary clicked pixel. Ask Dhiya to provide raw frames with wavelengths evaluated at the selected sky position, carry variance when available, and wire the route at the end of `app.py`. An initial live field probe around the approximate Barnard's Star coordinates returned 41 frames from D2, D3, D5, and D6, so it did not demonstrate a smooth 0.75–5 micron spectrum. Also, each point comes from a different observation date; a moving object may no longer be at the clicked position.
+
 ## Sources
 
 - [IRSA tutorial: Introduction to SPHEREx Spectral Images](https://caltech-ipac.github.io/irsa-tutorials/spherex-intro)
