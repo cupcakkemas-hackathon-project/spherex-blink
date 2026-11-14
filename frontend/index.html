@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPHEREx Blink</title>
+<style>
+  :root { --bg:#0b0f1a; --panel:#141a2b; --line:#26304a; --text:#e6ebf7; --mute:#8b96b3; --accent:#ffb347; --warn:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,sans-serif; }
+  header { padding:16px 20px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 2px; font-size:20px; } h1 span { color:var(--accent); }
+  .sub { color:var(--mute); font-size:13px; }
+  main { max-width:980px; margin:0 auto; padding:16px; display:grid; gap:14px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+  label { display:grid; gap:4px; font-size:12px; color:var(--mute); }
+  input, select, button { font:inherit; color:var(--text); background:#0e1424; border:1px solid var(--line); border-radius:6px; padding:8px 10px; }
+  input { width:150px; } button { cursor:pointer; } button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#1a1200; border-color:var(--accent); font-weight:600; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center; font-size:13px; color:var(--mute); }
+  .chips button { padding:4px 10px; font-size:13px; }
+  .banner { display:none; background:#3a1d1d; border:1px solid var(--warn); color:#ffd0d0; padding:8px 12px; border-radius:8px; font-size:13px; }
+  .view { display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:14px; }
+  @media (max-width:720px){ .view { grid-template-columns:1fr; } }
+  canvas { width:100%; aspect-ratio:1; image-rendering:pixelated; background:#000; border-radius:8px; display:block; }
+  dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:6px 10px; font-size:13px; }
+  dt { color:var(--mute); } dd { margin:0; word-break:break-word; }
+  .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .controls input[type=range] { flex:1; min-width:140px; padding:0; width:auto; }
+  #status { color:var(--mute); font-size:13px; min-height:20px; }
+  #status.err { color:var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <h1>SPHEREx <span>Blink</span></h1>
+  <div class="sub">Enter a patch of sky and watch how SPHEREx's view of it changes over time. Moving dots are comets, asteroids, brown dwarfs or nearby stars.</div>
+</header>
+<main>
+  <div class="panel">
+    <div class="row">
+      <label>RA (deg or 08h55m10.8s)<input id="ra" value="133.7951"></label>
+      <label>Dec (deg or -7d14m42.5s)<input id="dec" value="-7.2452"></label>
+      <label>Field of view
+        <select id="fov"><option value="1">1 arcmin</option><option value="2" selected>2 arcmin</option><option value="5">5 arcmin</option><option value="10">10 arcmin</option></select>
+      </label>
+      <label>View
+        <select id="mode"><option value="single">All frames in time order</option><option value="stack">Stack by detector</option><option value="diff">Difference (highlight movers)</option></select>
+      </label>
+      <label>Data
+        <select id="source"><option value="live">Live SPHEREx (IRSA)</option><option value="synthetic">Synthetic demo (fake)</option></select>
+      </label>
+      <button class="primary" id="go">Search</button>
+    </div>
+    <div class="chips">Try: <span id="chips"></span></div>
+  </div>
+
+  <div class="banner" id="banner"><b>SYNTHETIC DEMO.</b> These images are generated, not real SPHEREx data. They only show how the viewer works.</div>
+  <div id="status">Pick a target or enter coordinates, then press Search.</div>
+
+  <div class="view panel">
+    <canvas id="cv" width="64" height="64"></canvas>
+    <dl>
+      <dt>Frame</dt><dd id="f_n">–</dd>
+      <dt>Date (MJD)</dt><dd id="f_t">–</dd>
+      <dt>Detector</dt><dd id="f_d">–</dd>
+      <dt>Wavelength</dt><dd id="f_w">–</dd>
+      <dt>Flags</dt><dd id="f_f">–</dd>
+      <dt>Position</dt><dd id="f_p">–</dd>
+    </dl>
+  </div>
+
+  <div class="panel controls">
+    <button id="play">Pause</button>
+    <input type="range" id="scrub" min="0" max="0" value="0">
+    <label style="display:flex;align-items:center;gap:6px;flex-direction:row">Speed
+      <select id="speed"><option value="400">Slow</option><option value="200" selected>Normal</option><option value="80">Fast</option></select>
+    </label>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let frames = [], imgs = [], idx = 0, playing = true, timer = null, meta = {};
+
+// Example targets come from the backend so there is one source of truth.
+fetch('/api/targets').then(r => r.json()).then(t => {
+  for (const [name, c] of Object.entries(t)) {
+    const b = document.createElement('button'); b.textContent = name;
+    b.onclick = () => { $('ra').value = c.ra; $('dec').value = c.dec; search(); };
+    $('chips').appendChild(b);
+  }
+});
+
+function setStatus(msg, err=false){ $('status').textContent = msg; $('status').className = err ? 'err' : ''; }
+
+async function search(pushUrl = true) {
+  const p = new URLSearchParams({ ra:$('ra').value, dec:$('dec').value, fov:$('fov').value, mode:$('mode').value, source:$('source').value });
+  if (pushUrl) history.replaceState(null, '', '?' + p.toString());
+  $('banner').style.display = $('source').value === 'synthetic' ? 'block' : 'none';
+  setStatus('Fetching images… live queries can take a while.');
+  clearInterval(timer);
+  try {
+    const r = await fetch('/api/frames?' + p);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    meta = j; frames = j.frames;
+    imgs = await Promise.all(frames.map(f => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = 'data:image/png;base64,' + f.png; })));
+    $('scrub').max = frames.length - 1; idx = 0; playing = true; $('play').textContent = 'Pause';
+    setStatus(`${frames.length} frame(s) loaded.`);
+    draw(); start();
+  } catch (e) { setStatus('Error: ' + e.message, true); }
+}
+
+function draw() {
+  if (!imgs.length) return;
+  const i = imgs[idx]; cv.width = i.width; cv.height = i.height; ctx.drawImage(i, 0, 0);
+  const f = frames[idx];
+  $('f_n').textContent = `${idx + 1} / ${frames.length}`;
+  $('f_t').textContent = f.mjd.toFixed(2);
+  $('f_d').textContent = f.detector || '–';
+  $('f_w').textContent = isFinite(f.wavelength) ? f.wavelength.toFixed(2) + ' µm' : 'not available yet';
+  $('f_f').textContent = f.flags;
+  $('f_p').textContent = `RA ${meta.ra.toFixed(4)}°, Dec ${meta.dec.toFixed(4)}°, ${meta.fov_arcmin}′ wide`;
+  $('scrub').value = idx;
+}
+function start(){ clearInterval(timer); timer = setInterval(() => { if (playing && frames.length) { idx = (idx + 1) % frames.length; draw(); } }, +$('speed').value); }
+
+$('go').onclick = () => search();
+$('play').onclick = () => { playing = !playing; $('play').textContent = playing ? 'Pause' : 'Play'; };
+$('scrub').oninput = e => { playing = false; $('play').textContent = 'Play'; idx = +e.target.value; draw(); };
+$('speed').onchange = start;
+['mode','fov'].forEach(id => $(id).onchange = () => { if (frames.length) search(); });
+
+// URL parameters: ?ra=..&dec=..&fov=..&mode=..&source=.. loads straight away (embeddable).
+const q = new URLSearchParams(location.search);
+for (const k of ['ra','dec','fov','mode','source']) if (q.get(k)) $(k).value = q.get(k);
+if (q.get('ra') && q.get('dec')) search(false);
+</script>
+</body>
+</html>
