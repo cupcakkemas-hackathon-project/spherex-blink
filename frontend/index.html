@@ -44,6 +44,11 @@
   #spectrum_status { color:var(--mute); font-size:13px; min-height:20px; }
   #spectrum_status.err { color:var(--warn); }
   #spectrum { width:100%; height:auto; aspect-ratio:auto; image-rendering:auto; background:#0e1424; }
+  .spectrum-caption, .spectrum-caveat, .spectrum-hint { margin:6px 0 0; color:var(--mute); font-size:12px; }
+  .spectrum-hint { color:var(--accent); }
+  .spectrum-legend { display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:8px; color:var(--mute); font-size:12px; }
+  .spectrum-legend span { display:inline-flex; align-items:center; gap:5px; }
+  .spectrum-legend i { width:9px; height:9px; border-radius:50%; display:inline-block; }
   dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:6px 10px; font-size:13px; }
   dt { color:var(--mute); } dd { margin:0; word-break:break-word; }
   .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -137,6 +142,10 @@
     <h2>Point spectrum</h2>
     <div id="spectrum_status" role="status" aria-live="polite">Click the image to measure the spectrum at a position.</div>
     <canvas id="spectrum" width="640" height="300" role="img" aria-label="Spectrum plot"></canvas>
+    <p class="spectrum-caption">Brightness measured at the clicked image position across the observed wavelengths.</p>
+    <div class="spectrum-legend" id="spectrum_legend" aria-label="Detector colour legend"></div>
+    <p class="spectrum-hint" id="spectrum_hint" hidden>No clear source at this pixel; try clicking a bright star.</p>
+    <p class="spectrum-caveat">Observations come from different dates and use the sampled images returned for this position, not a continuous spectrum.</p>
   </div>
 
   <div class="panel controls">
@@ -162,6 +171,11 @@ let targets = {}, targetButtons = new Map();
 const activeDetectors = new Set([1, 2, 3, 4, 5, 6]);
 const detectorColors = ['#56b4e9','#e69f00','#009e73','#f0e442','#cc79a7','#d55e00'];
 const FRAME_REQUEST_TIMEOUT_MS = 4 * 60 * 1000;
+for (let detector = 1; detector <= detectorColors.length; detector++) {
+  const item = document.createElement('span');
+  item.innerHTML = `<i style="background:${detectorColors[detector - 1]}"></i>D${detector}`;
+  $('spectrum_legend').appendChild(item);
+}
 
 // Example targets come from the backend so there is one source of truth.
 fetch('/api/targets').then(r => r.json()).then(t => {
@@ -188,6 +202,14 @@ function updateTargetSelection() {
 
 function setStatus(msg, err=false){ $('status').textContent = msg; $('status').className = err ? 'err' : ''; }
 function setSpectrumStatus(msg, err=false){ $('spectrum_status').textContent = msg; $('spectrum_status').className = err ? 'err' : ''; }
+function updateSpectrumHint(points) {
+  const hasCrossingErrorBars = points.length > 0 && points.every(point => {
+    const flux = Number(point.flux), error = Number(point.err);
+    return Number.isFinite(flux) && Number.isFinite(error) && error >= 0
+      && flux - error <= 0 && flux + error >= 0;
+  });
+  $('spectrum_hint').hidden = !hasCrossingErrorBars;
+}
 
 async function copyCurrentLink() {
   try {
@@ -213,6 +235,7 @@ async function copyCurrentLink() {
 
 function clearSpectrum(message) {
   spectrumCtx.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+  $('spectrum_hint').hidden = true;
   setSpectrumStatus(message);
 }
 
@@ -230,6 +253,7 @@ function updateSpectrumForDetectors() {
     return;
   }
   plotSpectrum(points);
+  updateSpectrumHint(points);
   setSpectrumStatus(`${points.length} spectrum point(s) for the selected detectors.`);
 }
 
@@ -501,6 +525,7 @@ async function inspectPoint(event) {
     spectrumPoints = points;
     if (activeDetectors.size === 6) {
       plotSpectrum(points);
+      updateSpectrumHint(points);
       setSpectrumStatus(`${points.length} spectrum point(s) from ${meta.source === 'live' ? 'live SPHEREx data' : 'synthetic demo data'}.`);
     } else {
       updateSpectrumForDetectors();
