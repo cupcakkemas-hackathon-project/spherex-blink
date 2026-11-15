@@ -1,6 +1,6 @@
 # Testing Findings
 
-**Date:** 14 November 2026  
+**Updated:** 15 November 2026
 **Branch:** `main`
 
 ## Setup
@@ -16,7 +16,7 @@
 All current checks passed:
 
 - `/healthz` returned HTTP 200.
-- Single/live view returned 58 frames in 16.9 seconds.
+- Single/live view returned 58 frames in 13.2 seconds.
 - Stack/live view returned 30 frames from all six detectors.
 - Difference/live view returned 58 frames.
 - Timestamps increased correctly in all three views.
@@ -28,6 +28,7 @@ All current checks passed:
 - Spectrum was confirmed as non-synthetic.
 - Spectrum flux and error values were present.
 - Spectrum wavelengths were valid and sorted.
+- Spectrum request elapsed: 9.7 seconds.
 - Spectrum coverage by detector was:
   - D1: 0.816870-1.039132 micron
   - D2: 1.152649-1.591008 micron
@@ -54,7 +55,8 @@ All current checks passed:
 
 ## Issues and limitations
 
-- The current cold single/live request took 16.9 seconds; this is within the 20-second target but still depends on IRSA response time.
+- The latest cold single/live request took 13.2 seconds; this is within the
+  20-second target but still depends on IRSA response time.
 - Some IRSA cutouts may be skipped because of intermittent HTTP 503 responses.
 - A later live search showed: `Error: IRSA is temporarily unavailable: IRSA did not return any requested cutouts`.
 - This means IRSA returned no usable cutouts for that request after the backend's retry attempts; retrying later may succeed.
