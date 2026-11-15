@@ -343,7 +343,9 @@ def _build_frames(
     tbl = query_images(ra, dec, fov_arcmin)
     rows = _select_rows(tbl)
     frames = []
-    with cf.ThreadPoolExecutor(max_workers=4) as ex:
+    # Astropy WCS/reproject calls can corrupt the process heap when several
+    # FITS frames are processed concurrently on Windows.
+    with cf.ThreadPoolExecutor(max_workers=1) as ex:
         futs = [
             ex.submit(
                 load_frame,
